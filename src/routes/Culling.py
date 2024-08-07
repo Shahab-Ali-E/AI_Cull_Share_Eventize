@@ -37,7 +37,7 @@ S3_utils = S3Utils(aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
 
 @router.post('/create_directory/{dir_name}', status_code=status.HTTP_201_CREATED)
 async def create_directory_in_cloud(dir_name:str, request:Request, user:User = Depends(get_user)):
-    return await create_folder_in_S3(dir_name=dir_name, request=request)
+    return await create_folder_in_S3(dir_name=dir_name.lower(), request=request)
 
 
 
@@ -54,6 +54,7 @@ async def upload_images(request: Request, folder: str, images: list[UploadFile] 
     """
     user_id = request.session.get("user_id")
     uploaded_images_url = []
+    folder=folder.lower()
 
     is_valid, validation_message = images_validation(images, max_uploads=20, max_size_mb=100)
 

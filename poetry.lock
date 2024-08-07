@@ -3612,16 +3612,6 @@ MarkupSafe = ">=2.1.1"
 watchdog = ["watchdog (>=2.3)"]
 
 [[package]]
-name = "wget"
-version = "3.2"
-description = "pure python download utility"
-optional = false
-python-versions = "*"
-files = [
-    {file = "wget-3.2.zip", hash = "sha256:35e630eca2aa50ce998b9b1a127bb26b30dfee573702782aa982f875e3f16061"},
-]
-
-[[package]]
 name = "wheel"
 version = "0.43.0"
 description = "A built-package format for Python"
@@ -3717,4 +3707,4 @@ files = [
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.12"
-content-hash = "d022c88877de789873a2b87c95d3a124ae70b39ce0df526714c1e2472bdc3d39"
+content-hash = "adfbb34e7a71c839da77c8ea1e91c25c92d395ea08f57d03b6e36685365f670d"

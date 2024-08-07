@@ -3,20 +3,16 @@ from transformers import ViTForImageClassification, ViTFeatureExtractor
 from sqlalchemy.orm import Session
 from tensorflow.keras.models import load_model  # type: ignore
 from services.culling.separateBlurImages import separate_blur_images
-from fastapi import HTTPException, status
-from config.security import images_validation
+from fastapi.responses import JSONResponse
 from config.settings import get_settings
 from services.culling.separateClosedEye import ClosedEyeDetection
 from utils.S3Utils import S3Utils
 from config.Database import session
 from model.ImagesMetaData import ImagesMetaData
 import cv2
-# from celery import shared_task
 from Celery.utils import create_celery
-# import urllib.request
-from urllib.request import urlopen
-import io
 import requests
+from celery import chain
 
 celery = create_celery()
 
@@ -35,18 +31,12 @@ face_cascade = cv2.CascadeClassifier(settings.FACE_CASCADE_MODEL)
 
 
 
-@celery.task(name='upload_image_s3_store_metadata_in_DB', bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={'max_retries':5}, queue='culling')
-def culling_task(self, user_id, uploaded_images_url, folder):
 
-    self.update_state(state='STARTED', meta={'status': 'Task started'})
-    result = asyncio.run(upload_image_s3_store_metadata_in_DB(self, user_id ,uploaded_images_url, folder))
-    self.update_state(state='COMPLETED',meta={'status':'Task completed'})
-    return result
+#---------------------Independenst Task For Culling------------------------------------------------
 
-
-
-async def upload_image_s3_store_metadata_in_DB(self, user_id, uploaded_images_url, folder):
-
+#This task is used to get images from AWS server from the link which have provided as param to it 
+@celery.task(name='get_images_from_aws', bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={'max_retries':5}, queue='culling')
+def get_images_from_aws(self, uploaded_images_url):
     images = []
 
     for index, image in enumerate(uploaded_images_url):
@@ -62,9 +52,16 @@ async def upload_image_s3_store_metadata_in_DB(self, user_id, uploaded_images_ur
             'size': image_size,
             'content': image_content
         })
-        self.update_state(state='PROGRESS', meta={"progress":index+1, "total":len(uploaded_images_url), "info":"getting images to process"})
+        progress = ((index + 1) / len(uploaded_images_url)) * 100
+        self.update_state(state='PROGRESS', meta={"progress": progress, "info": "Getting images to process"})
     
+    return images
 
+
+
+#This task is used to separate blur images and upload them to aws server and finally return non-blur images
+@celery.task(name='blur_image_separation', bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={'max_retries':3}, queue='culling')
+def blur_image_separation(self, images, user_id, folder):
     #database session
     db_session:Session = session()
     
@@ -75,8 +72,8 @@ async def upload_image_s3_store_metadata_in_DB(self, user_id, uploaded_images_ur
                        bucket_name=settings.AWS_BUCKET_NAME)
     
 
-    # #perform blur detection on image and separate them
-    output_from_blur =  await separate_blur_images(images=images,
+    # # #perform blur detection on image and separate them
+    output_from_blur =  asyncio.run(separate_blur_images(images=images,
                                         feature_extractor=feature_extractor,
                                         blur_detect_model=blur_detect_model, 
                                         root_folder = user_id,
@@ -85,23 +82,71 @@ async def upload_image_s3_store_metadata_in_DB(self, user_id, uploaded_images_ur
                                         DBModel= ImagesMetaData,
                                         session=db_session,
                                         task=self
-                                    )
-    self.update_state(state='PROGRESS',meta={'info':"Blur images separation done !"})
+                                    ))
 
+    return output_from_blur
+
+
+
+#This task is used to separate closed eye images and upload them to aws server and finally return non-closed-eye images
+@celery.task(name='closed_eye_separation', bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={'max_retries': 3}, queue='culling')
+def closed_eye_separation(self, output_from_blur, user_id, folder):
     if output_from_blur[1] is None or "No images were uploaded" in output_from_blur[1]:
         return {"status": "error", "detail": "error occurred in blur detection"}
     
+    db_session: Session = session()
 
-    #initlizing closed eye detection
-    closed_eye_detect_obj =  ClosedEyeDetection(closed_eye_detection_model=closed_eye_detection_model,
-                                                face_cascade=face_cascade,
-                                                S3_util_obj=s3_utils,
-                                                root_folder = user_id,
-                                                inside_root_main_folder = folder,
-                                                DBModel= ImagesMetaData,
-                                                session=db_session,
-                                                )
+    s3_utils = S3Utils(aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
+                       aws_region=settings.AWS_REGION,
+                       aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
+                       bucket_name=settings.AWS_BUCKET_NAME)
     
-    self.update_state(state='PROGRESS',meta={'info':"closed eye images separation done !"})
+    closed_eye_detect_obj = ClosedEyeDetection(
+        closed_eye_detection_model=closed_eye_detection_model,
+        face_cascade=face_cascade,
+        S3_util_obj=s3_utils,
+        root_folder=user_id,
+        inside_root_main_folder=folder,
+        DBModel=ImagesMetaData,
+        session=db_session,
+    )
 
-    return  await closed_eye_detect_obj.separate_closed_eye_images_and_upload_to_s3(images=output_from_blur[0],task=self)
+    result = asyncio.run(closed_eye_detect_obj.separate_closed_eye_images_and_upload_to_s3(images=output_from_blur[0], task=self))
+
+    return result
+
+
+
+
+#-----------------------Chaining All Above Task Here----------------------------------
+
+@celery.task(name='upload_image_s3_store_metadata_in_DB', bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={'max_retries':5}, queue='culling')
+def culling_task(self, user_id, uploaded_images_url, folder):
+
+    self.update_state(state='STARTED', meta={'status': 'Task started'})
+
+    task_ids=[]
+    # Chain the results
+    chain_result = chain(
+        get_images_from_aws.s(uploaded_images_url),
+        blur_image_separation.s(user_id, folder),
+        closed_eye_separation.s(user_id, folder)
+    ) 
+
+    result = chain_result.apply_async()
+
+    #to get the task id's of each one in chaining
+    task_ids.append(result.id)
+    while result.parent:
+        result = result.parent
+        task_ids.append(result.id)
+
+    task_ids.reverse()  # Reverse to get the correct order of execution
+
+    self.update_state(state='SUCCESS', meta={'status': 'Culling task executing in background', 'task_ids': task_ids})
+
+    return JSONResponse(task_ids)
+
+
+
+

@@ -33,6 +33,9 @@ def get_task_info(task_id):
     try:
         task_result = AsyncResult(task_id)
 
+        if task_result is None:
+            raise HTTPException(status_code=404, detail="Task not found")
+
         if task_result.state == 'PENDING':
             return {'state': task_result.state, 'status': 'Task is waiting to be processed.'}
         elif task_result.state == 'PROGRESS':

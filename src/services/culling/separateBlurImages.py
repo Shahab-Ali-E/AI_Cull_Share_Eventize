@@ -58,7 +58,7 @@ async def separate_blur_images(images, feature_extractor, blur_detect_model, roo
 
             Bucket_Folder = f'{inside_root_main_folder}/{upload_image_folder}'
             # Saving the blur images into Database
-            DB_response = await save_image_metadata_to_DB(DBModel=DBModel,
+            await save_image_metadata_to_DB(DBModel=DBModel,
                                                           img_id=filename,
                                                           img_filename=image['name'],
                                                           img_content_type=image['content_type'],
@@ -66,12 +66,14 @@ async def separate_blur_images(images, feature_extractor, blur_detect_model, roo
                                                           bucket_folder=Bucket_Folder,
                                                           session=session
                                                           )
-            print(DB_response)
         else:
             results.append(image)
 
         # Update the progress
         if task:
-            task.update_state(state='PROGRESS', meta={'current': index+1, 'total': total_img_len, 'info': 'Blur image separation processing'})
+            progress = ((index + 1) / total_img_len) * 100
+            task.update_state(state='PROGRESS', meta={'progress': progress, 'info': 'Blur image separation processing'})
 
-    return results, response or "No images were uploaded"
+        task.update_state(state='PROGRESS', meta={'progress': 100, 'info': "Blur images separation completed !"})
+
+    return results, response or "No blur images were found"

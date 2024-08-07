@@ -87,17 +87,18 @@ class ClosedEyeDetection:
         
         for index, image in enumerate(images):
             result = await self.process_image(image)
-
-            # Perform check if the image is closed eye, upload it to S3; if it's open, store in the array
-            for value in result.items():
+            
+            for img_name, predictions in result.items():
                 content = image['content']
                 open_images = Image.open(io.BytesIO(content)).convert('RGB')
-                if "closed" in value:
-                    filename = f"{uuid4()}__{image['name']}"
+                
+                if "closed" in predictions:
+                    filename = f"{uuid4()}__{img_name}"
                     byte_arr = io.BytesIO()
                     format = open_images.format if open_images.format else 'JPEG'
                     open_images.save(byte_arr, format=format)
                     byte_arr.seek(0)
+                    
                     try:
                         response = self.S3.upload_image(
                             root_folder=self.root_folder,
@@ -110,22 +111,25 @@ class ClosedEyeDetection:
                         raise Exception(f"Error uploading image to S3: {str(e)}")
                     
                     Bucket_Folder = f'{self.inside_root_main_folder}/{self.upload_image_folder}'
-
+                    
                     # Saving the closed eye images into Database
-                    DB_response = await save_image_metadata_to_DB(DBModel=self.DBModel,
+                    await save_image_metadata_to_DB(DBModel=self.DBModel,
                                                                 img_id=filename,
-                                                                img_filename=image['name'],
+                                                                img_filename=img_name,
                                                                 img_content_type=image['content_type'],
                                                                 user_id=self.root_folder,
                                                                 bucket_folder=Bucket_Folder,
-                                                                session=self.session
-                                                                )
-                    print(DB_response)
+                                                                session=self.session)
+                    
                 else:
                     open_eyes_images.append(image)  # Append the image if eyes are open
 
             # Updating progress here
             if task:
-                task.update_state(state='PROGRESS', meta={'current': index+1, 'total': total_img_len, 'info': 'Closed eye image separation processing'})
+                progress = ((index + 1) / total_img_len) * 100
+            task.update_state(state='PROGRESS', meta={'progress': progress, 'info': 'Closed eye image separation processing'})
+        
+        task.update_state(state='PROGRESS', meta={'progress': 100, 'info': "Closed eye images separation completed !"})
+        
+        return open_eyes_images, response or "No closed eye image were found"
 
-        return open_eyes_images, response or "No images were uploaded"
