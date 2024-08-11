@@ -1,0 +1,59 @@
+from fastapi import HTTPException, status
+from model.User import User
+from config.settings import get_settings
+
+settings = get_settings()
+
+
+def update_user_storage_in_db(db_session, total_image_size, user_id, module, operation='increment'):
+    """
+    Updates the storage usage for a user in the database based on the operation performed (increment or decrement) 
+    and the specified module (culling or smart share).
+
+    :param db_session: The database session for executing queries.
+    :param total_image_size: The size of the images to be added or removed from the user's storage.
+    :param user_id: The ID of the user whose storage is being updated.
+    :param module: The module name, either 'APP_SMART_CULL_MODULE' or 'APP_SMART_SHARE_MODULE'.
+    :param operation: The operation type, either 'increment' (default) to increase the storage or 'decrement' to decrease it.
+
+    Returns:
+    - A tuple containing a boolean indicating success, and a dictionary with a message or detail.
+
+    :Raise: HTTPException: If the user is not found or if there is an error updating the storage in the database.
+    """
+
+    user = db_session.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+
+    # Update user storage usage in the database accordingly according to module
+    try:
+        #for culling module
+        if module == settings.APP_SMART_CULL_MODULE:
+            if operation == 'increment':
+                user.total_culling_storage_used += total_image_size
+            elif operation == 'decrement':
+                user.total_culling_storage_used -= total_image_size
+                user.total_culling_storage_used = max(user.total_culling_storage_used, 0)#assign zero if got -ve value
+
+         #for image share module
+        elif module == settings.APP_SMART_SHARE_MODULE:
+            if operation == 'increment':
+                user.total_image_share_storage_used += total_image_size
+            elif operation == 'decrement':
+                user.total_image_share_storage_used -= total_image_size
+                user.total_image_share_storage_used = max(user.total_image_share_storage_used, 0)
+        else:
+            return None, {'detail': 'No module with this name'}
+        
+        db_session.commit()
+        db_session.refresh(user)
+    
+    except Exception as e:
+        db_session.rollback()
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Error updating storage usage in database: {str(e)}")
+    
+    return True, {'message': 'success',
+                  'data':user}
+

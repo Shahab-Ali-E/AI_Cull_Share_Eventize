@@ -1,8 +1,8 @@
 from datetime import timezone
 from config.Database import Base
-from sqlalchemy import Column, Boolean, String, ForeignKey, DateTime, func, BigInteger
+from sqlalchemy import Column, Boolean, String, ForeignKey, DateTime, func, BigInteger, Float
 from sqlalchemy.orm import relationship
-from model import ImagesMetaData
+from model import ImagesMetaData, FolderInS3
 
 class User(Base):
     __tablename__ = "users"
@@ -13,8 +13,13 @@ class User(Base):
     email_verified = Column(Boolean, nullable=False, default=False)
     picture = Column(String, default=None)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    total_culling_storage_used = Column(Float, default=0.0)
+    total_image_share_storage_used = Column(Float, default=0.0)
+
+    #relationships with user
     tokens = relationship("Token", back_populates="user", cascade="all, delete-orphan")
     images = relationship("ImagesMetaData", back_populates="owner", cascade="all, delete-orphan")
+    folders = relationship("FoldersInS3", back_populates="created_by", cascade="all, delete-orphan")
 
 class Token(Base):
     __tablename__ = 'tokens'

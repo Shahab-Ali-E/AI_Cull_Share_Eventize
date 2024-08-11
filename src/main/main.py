@@ -28,7 +28,7 @@ from fastapi.responses import HTMLResponse
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.responses import RedirectResponse
 from config.settings import get_settings
-from routes import OAuth, Culling
+from routes import OAuth, Culling, SmartShare
 from config.Database import Base, engine
 from Celery.utils import create_celery
 
@@ -50,6 +50,7 @@ app.add_middleware(SessionMiddleware, secret_key=settings.APP_SECRET_KEY)
 app.include_router(OAuth.router)
 app.include_router(OAuth.welcome_route)
 app.include_router(Culling.router)
+app.include_router(SmartShare.router)
 
 
 @app.get('/')

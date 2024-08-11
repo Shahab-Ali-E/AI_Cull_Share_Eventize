@@ -3,7 +3,7 @@ from PIL import Image
 import io
 import torch
 from uuid import uuid4
-from utils.SaveImageMetaDataToDB import save_image_metadata_to_DB
+from utils.SaveMetaDataToDB import save_image_metadata_to_DB
 from config.settings import get_settings
 
 settings = get_settings()
@@ -12,7 +12,7 @@ settings = get_settings()
 predicted_labels = ['undistorted', 'blurred']
 upload_image_folder = settings.BLUR_FOLDER
 
-async def separate_blur_images(images, feature_extractor, blur_detect_model, root_folder, inside_root_main_folder, S3_util_obj, DBModel, session, task):
+async def separate_blur_images(images, feature_extractor, blur_detect_model, root_folder, inside_root_main_folder, folder_id, S3_util_obj, session, task):
     results = []
     response = None
     total_img_len = len(images)
@@ -56,16 +56,17 @@ async def separate_blur_images(images, feature_extractor, blur_detect_model, roo
             except Exception as e:
                 raise Exception(f"Error uploading image to S3: {str(e)}")
 
-            Bucket_Folder = f'{inside_root_main_folder}/{upload_image_folder}'
+            Bucket_Folder = f'{root_folder}/{inside_root_main_folder}/{upload_image_folder}'
             # Saving the blur images into Database
-            await save_image_metadata_to_DB(DBModel=DBModel,
-                                                          img_id=filename,
-                                                          img_filename=image['name'],
-                                                          img_content_type=image['content_type'],
-                                                          user_id=root_folder,
-                                                          bucket_folder=Bucket_Folder,
-                                                          session=session
-                                                          )
+            save_image_metadata_to_DB(
+                                        img_id=filename,
+                                        img_filename=image['name'],
+                                        img_content_type=image['content_type'],
+                                        user_id=root_folder,
+                                        bucket_folder=Bucket_Folder,
+                                        session=session,
+                                        folder_id=folder_id
+                                    )
         else:
             results.append(image)
 

@@ -4,19 +4,18 @@ import numpy as np
 from tensorflow.keras.preprocessing.image import img_to_array # type: ignore
 from uuid import uuid4
 from PIL import Image
-from utils.SaveImageMetaDataToDB import save_image_metadata_to_DB
+from utils.SaveMetaDataToDB import save_image_metadata_to_DB
 from config.settings import get_settings
 
 settings = get_settings()
 
 class ClosedEyeDetection:
 
-    def __init__(self, face_cascade, closed_eye_detection_model, S3_util_obj, root_folder, inside_root_main_folder, DBModel, session):
+    def __init__(self, face_cascade, closed_eye_detection_model, S3_util_obj, root_folder, inside_root_main_folder, session):
         self.face_cascade = face_cascade
         self.model = closed_eye_detection_model
         self.S3 = S3_util_obj
         self.root_folder = root_folder
-        self.DBModel = DBModel
         self.session = session
         self.inside_root_main_folder = inside_root_main_folder
         self.upload_image_folder = settings.CLOSED_EYE_FOLDER
@@ -80,7 +79,7 @@ class ClosedEyeDetection:
         return results
 
     # It will take single or bunch of images and upload them to S3 after making prediction
-    async def separate_closed_eye_images_and_upload_to_s3(self, images, task):
+    async def separate_closed_eye_images_and_upload_to_s3(self, images, folder_id, task):
         open_eyes_images = []  # Initialize the list outside the loop
         response = None
         total_img_len = len(images)
@@ -110,16 +109,19 @@ class ClosedEyeDetection:
                     except Exception as e:
                         raise Exception(f"Error uploading image to S3: {str(e)}")
                     
-                    Bucket_Folder = f'{self.inside_root_main_folder}/{self.upload_image_folder}'
+                    
+                    Bucket_Folder = f'{self.root_folder}/{self.inside_root_main_folder}/{self.upload_image_folder}'
                     
                     # Saving the closed eye images into Database
-                    await save_image_metadata_to_DB(DBModel=self.DBModel,
-                                                                img_id=filename,
-                                                                img_filename=img_name,
-                                                                img_content_type=image['content_type'],
-                                                                user_id=self.root_folder,
-                                                                bucket_folder=Bucket_Folder,
-                                                                session=self.session)
+                    save_image_metadata_to_DB(
+                                                img_id=filename,
+                                                img_filename=img_name,
+                                                img_content_type=image['content_type'],
+                                                user_id=self.root_folder,
+                                                bucket_folder=Bucket_Folder,
+                                                session=self.session,
+                                                folder_id=folder_id
+                                            )
                     
                 else:
                     open_eyes_images.append(image)  # Append the image if eyes are open

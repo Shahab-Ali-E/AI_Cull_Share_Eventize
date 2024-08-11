@@ -11,6 +11,10 @@ class ImagesMetaData(Base):
     upload_at = Column(DateTime, server_default=func.now())
     Bucket_folder = Column(String, nullable=False)
     user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    folder_id = Column(BigInteger, ForeignKey("user_s3_folders.id", ondelete='CASCADE'), nullable=False)
     
     # Relationship back to User
     owner = relationship("User", back_populates="images")
+
+    # Relationship to FoldersInS3
+    folder = relationship("FoldersInS3", back_populates="images")

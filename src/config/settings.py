@@ -13,6 +13,10 @@ class Settings(BaseSettings):
     # App
     APP_NAME:  str = os.environ.get("APP_NAME", "")
     DEBUG: bool = bool(os.environ.get("DEBUG", False))
+    APP_SMART_CULL_MODULE:str = os.environ.get('APP_SMART_CULL_MODULE',None)
+    APP_SMART_SHARE_MODULE:str = os.environ.get('APP_SMART_SHARE_MODULE',None)
+    MAX_SMART_CULL_MODULE_STORAGE:int = os.environ.get('MAX_SMART_CULL_MODULE_STORAGE',100000000)
+    MAX_SMART_SHARE_MODULE_STORAGE:int = os.environ.get('MAX_SMART_SHARE_MODULE_STORAGE',100000000)
     
     # FrontEnd Application
     FRONTEND_HOST: str = os.environ.get("FRONTEND_HOST", "http://localhost:3000")
@@ -38,7 +42,9 @@ class Settings(BaseSettings):
     AWS_SECRET_ACCESS_KEY: str = os.environ.get("AWS_SECRET_ACCESS_KEY",None)
     AWS_ACCESS_KEY_ID: str =os.environ.get("AWS_ACCESS_KEY_ID",None)
     AWS_REGION: str = os.environ.get("AWS_REGION",None)
-    AWS_BUCKET_NAME :str = os.environ.get("AWS_BUCKET_NAME",None)
+    AWS_BUCKET_SMART_CULL_NAME :str = os.environ.get("AWS_BUCKET_SMART_CULL_NAME",None)
+    AWS_BUCKET_SMART_SHARE_NAME: str = os.environ.get('AWS_BUCKET_SMART_SHARE_NAME',None)
+    PRESIGNED_URL_EXPIRY_SEC:int = os.environ.get('PRESIGNED_URL_EXPIRY_SEC',1800)
   
     #AWS FOLDERS
     IMAGES_BEFORE_CULLING_STARTS_Folder:str = os.environ.get("IMAGES_BEFORE_CULLING_STARTS_Folder",None)

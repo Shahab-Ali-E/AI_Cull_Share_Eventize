@@ -1,10 +1,10 @@
 from fastapi import APIRouter, Request, status, Depends, HTTPException
-from starlette.responses import RedirectResponse
+from starlette.responses import RedirectResponse,JSONResponse
 from sqlalchemy.orm import Session
 from config.Database import get_db
 from model.User import User
+from schemas.user import userResponse
 from services.Auth.google_auth import get_user, google_auth, google_login
-from schemas.UserResponse import UserResponse
 import logging
 
 # Initialize logging
@@ -44,18 +44,11 @@ async def logout(request: Request):
 
 
 # Welcome route after login
-@welcome_route.get('/welcome')
+@welcome_route.get('/welcome', response_model=userResponse)
 async def welcome(User: User = Depends(get_user)):
     print("#########################")
     print(User)
     if not User:
         return RedirectResponse(url='/Auth/login')
 
-    return {
-        "data": {
-            "id": User['id'],
-            "name": User['name'],
-            "email": User['email'],
-            "picture": User['picture']
-        } 
-    }
+    return User
