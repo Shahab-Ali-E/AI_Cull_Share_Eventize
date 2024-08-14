@@ -23,6 +23,7 @@ class BaseConfig:
         Queue("celery"),
         # custom queue
         Queue("culling"),
+        Queue("smart_sharing"),
     )
 
     CELERY_TASK_ROUTES = (route_task,)

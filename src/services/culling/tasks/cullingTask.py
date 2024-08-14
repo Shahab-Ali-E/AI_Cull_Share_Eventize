@@ -2,10 +2,10 @@ import asyncio
 from transformers import ViTForImageClassification, ViTFeatureExtractor
 from sqlalchemy.orm import Session
 from tensorflow.keras.models import load_model  # type: ignore
-from services.culling.separateBlurImages import separate_blur_images
+from services.Culling.separateBlurImages import separate_blur_images
 from fastapi.responses import JSONResponse
 from config.settings import get_settings
-from services.culling.separateClosedEye import ClosedEyeDetection
+from services.Culling.separateClosedEye import ClosedEyeDetection
 from utils.S3Utils import S3Utils
 from config.Database import session
 from model.ImagesMetaData import ImagesMetaData

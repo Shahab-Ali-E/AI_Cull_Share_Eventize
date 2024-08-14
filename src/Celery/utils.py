@@ -19,7 +19,7 @@ def create_celery():
     celery_app.conf.update(worker_send_task_events=False)
     celery_app.conf.update(worker_prefetch_multiplier=1)
     celery_app.conf.update(broker_connection_retry_on_startup=True)
-    celery_app.conf.update(imports=['src.services.culling.tasks'])
+    celery_app.conf.update(imports=['src.services.Culling.tasks','src.services.Smart_Share.tasks'])
 
     return celery_app
 

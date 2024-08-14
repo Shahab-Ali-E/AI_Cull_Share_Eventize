@@ -29,11 +29,11 @@ class Settings(BaseSettings):
     POSTGRES_DB: str = os.environ.get("POSTGRES_DB", None)
     DATABASE_URI: str = f"postgresql://{POSTGRES_USER}:%s@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}" % quote_plus(POSTGRES_PASS)
 
-    # JWT Secret Key
-    # JWT_SECRET: str = os.environ.get("JWT_SECRET", "ad5780b8bd3b2540ef87839b5bb7f617322d9efcb248d7e026d98605780255d6")
-    # JWT_ALGORITHM: str = os.environ.get("ACCESS_TOKEN_ALGORITHM", "HS256")
-    # ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.environ.get("ACCESS_TOKEN_EXPIRE_MINUTES", 3))
-    # REFRESH_TOKEN_EXPIRE_MINUTES: int = int(os.environ.get("REFRESH_TOKEN_EXPIRE_MINUTES", 1440))
+    #JWT Secret Key
+    JWT_SECRET: str = os.environ.get("JWT_SECRET", "ad5780b8bd3b2540ef87839b5bb7f617322d9efcb248d7e026d98605780255d6")
+    JWT_ALGORITHM: str = os.environ.get("ACCESS_TOKEN_ALGORITHM", "HS256")
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.environ.get("ACCESS_TOKEN_EXPIRE_MINUTES", 3))
+    REFRESH_TOKEN_EXPIRE_MINUTES: int = int(os.environ.get("REFRESH_TOKEN_EXPIRE_MINUTES", 1440))
 
     # App Secret Key
     APP_SECRET_KEY: str = os.environ.get("SECRET_KEY", None)
@@ -73,10 +73,9 @@ class Settings(BaseSettings):
     #CELERY VARIABLES
     CELERY_BROKER_URL:str = os.environ.get("CELERY_BROKER_URL",None)
     CELERY_RESULT_BACKEND_URL:str = os.environ.get("CELERY_RESULT_BACKEND_URL","redis://127.0.0.1:6379/0")
-    BROKER_TRANSPORT:str = os.environ.get("BROKER_TRANSPORT",None)
     WORKER_CONCURRENCY :int = os.environ.get("WORKER_CONCURRENCY",1)
-    BROKER_TRANSPORT_REGION:str = os.environ.get("BROKER_TRANSPORT_REGION",None)
     CELERY_WORKING_ENV_CONFIG:str = os.environ.get("CELERY_WORKING_ENV_CONFIG","development")
+
 
 @lru_cache()
 def get_settings() -> Settings:

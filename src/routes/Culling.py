@@ -8,13 +8,13 @@ from model.FolderInS3 import FoldersInS3
 from schemas.cullingData import cullingData
 from services.Auth.google_auth import get_user
 from sqlalchemy.orm import Session
-from services.culling.createFolderInS3 import create_folder_in_S3
+from services.Culling.createFolderInS3 import create_folder_in_S3
 from config.settings import get_settings
-from services.culling.deleteFolderFromS3 import delete_folder_in_s3_and_update_DB
-from services.culling.pre_cull_img_processing import pre_cull_image_processing
+from services.Culling.deleteFolderFromS3 import delete_folder_in_s3_and_update_DB
+from services.Culling.pre_cull_img_processing import pre_cull_image_processing
 from utils.S3Utils import S3Utils
 from PIL import Image
-from services.culling.tasks.cullingTask import culling_task
+from services.Culling.tasks.cullingTask import culling_task
 from Celery.utils import get_task_info
 from sse_starlette.sse import EventSourceResponse
 

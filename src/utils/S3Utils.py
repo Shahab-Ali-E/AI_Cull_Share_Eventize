@@ -179,6 +179,36 @@ class S3Utils:
 
         return {"image uploaded successfully"}
     
+        #This will upload the prdicted images to right folder like blur goes in blur_image_folder and vice versa
+    def upload_smart_share_images(self, root_folder, event_folder, image_data, filename):
+        """
+        Uploads an image to a specific folder in S3.
+
+        Args:
+            root_folder (str): The root folder under which the main and upload folders are located.
+            event_name (str): The event folder where the image will be uploaded.
+            image_data (file-like object): The image data to upload.
+            filename (str): The name of the file to be uploaded.
+
+        Returns:
+            dict: A success message.
+
+        Raises:
+            HTTPException: If the specified folders do not exist.
+        """
+        root_folder = f'{root_folder}/'
+        event_folder = f'{root_folder}{event_folder}/'
+
+        if not self.folder_exists(root_folder):
+            raise HTTPException(f'Root folder "{root_folder}" does not exist.')
+        
+        if not self.folder_exists(event_folder):
+            raise HTTPException(f'Event with name "{event_folder}" does not exist.')
+
+        self.client.upload_fileobj(image_data, self.bucket_name, f'{event_folder}{filename}')
+
+        return {"image uploaded successfully"}
+    
 
 
     def get_image_from_s3_before_cull(self, root_folder, main_folder, images_before_cull_folder ,image_key):
