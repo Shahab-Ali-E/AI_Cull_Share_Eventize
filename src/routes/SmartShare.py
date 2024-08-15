@@ -4,11 +4,13 @@ from config.Database import get_db
 from config.security import validate_images_and_storage
 from model.FolderInS3 import FoldersInS3
 from model.User import User
+from schemas.cullingData import cullingData
 from services.Auth.google_auth import get_user
 from sqlalchemy.orm import Session
 from config.settings import get_settings
-from services.Smart_Share.createEvent import create_event_in_S3_store_meta_to_DB
-from services.Smart_Share.imagePreProcessEmbeddings import preprocess_image_before_embedding
+from services.SmartShare.createEvent import create_event_in_S3_store_meta_to_DB
+from services.SmartShare.imagePreProcessEmbeddings import preprocess_image_before_embedding
+from services.SmartShare.tasks.imageShareTask import image_share_task
 from utils.S3Utils import S3Utils
 
 
@@ -74,3 +76,15 @@ async def upload_images(request: Request, event_name: str, images: list[UploadFi
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An unexpected error occurred"
         )
+    
+@router.post('/share_images')
+async def share_images(culling_data:cullingData, request:Request, db_session:Session = Depends(get_db)):
+
+    user_id = request.session.get("user_id")
+    #Sending images URL and other info to Celery task
+    try:
+        task = image_share_task.apply_async(args=[user_id, culling_data.images_url])
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error sending task to Celery: {str(e)}")
+
+    return JSONResponse({"task_id": task.id})

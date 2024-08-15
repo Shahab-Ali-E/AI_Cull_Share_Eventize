@@ -28,7 +28,7 @@ def save_image_metadata_to_DB(img_id, img_filename, img_content_type, user_id, b
 
 
 
-def save_or_update_metadata_in_db(session: Session, match_criteria: dict, update_fields: dict, task:str='insert'):
+def save_or_update_metadata_in_db(session: Session, match_criteria: dict, update_fields: dict=None, task:str='insert'):
     """
     Save or update metadata in the database.
 
@@ -39,11 +39,9 @@ def save_or_update_metadata_in_db(session: Session, match_criteria: dict, update
     :return: Dictionary with the status and data or error message.
     """
     try:
-        # Check if the record already exists
-        existing_record = session.query(FolderInS3.FoldersInS3).filter_by(**match_criteria).first()
-        print(existing_record)
-        
         if task=='update':
+            # Check if the record already exists
+            existing_record = session.query(FolderInS3.FoldersInS3).filter_by(**match_criteria).first()
             if not existing_record:
                 raise HTTPException(status_code=404, detail="no record found")
             
@@ -56,7 +54,7 @@ def save_or_update_metadata_in_db(session: Session, match_criteria: dict, update
         
         else:
             # Create a new record
-            new_record_data = {**match_criteria, **update_fields}
+            new_record_data = {**match_criteria}
             new_record = FolderInS3.FoldersInS3(**new_record_data)
             session.add(new_record)
             session.commit()

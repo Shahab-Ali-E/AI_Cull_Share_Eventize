@@ -1,8 +1,8 @@
-"""create user token and image metadata tables
+"""create user, image_metadata, token, folder_in_s3 tables
 
-Revision ID: f24bc84623f7
+Revision ID: 1217b0cfb497
 Revises: 
-Create Date: 2024-08-01 15:31:55.789737
+Create Date: 2024-08-15 09:18:19.189362
 
 """
 from typing import Sequence, Union
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = 'f24bc84623f7'
+revision: str = '1217b0cfb497'
 down_revision: Union[str, None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None

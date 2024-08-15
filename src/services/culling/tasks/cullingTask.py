@@ -110,7 +110,7 @@ def closed_eye_separation(self, output_from_blur, user_id, folder, folder_id):
 
 #-----------------------Chaining All Above Task Here----------------------------------
 
-@celery.task(name='upload_image_s3_store_metadata_in_DB', bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={'max_retries':5}, queue='culling')
+@celery.task(name='culling_task', bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={'max_retries':5}, queue='culling')
 def culling_task(self, user_id, uploaded_images_url, folder, folder_id):
 
     self.update_state(state='STARTED', meta={'status': 'Task started'})

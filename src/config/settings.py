@@ -4,6 +4,7 @@ from urllib.parse import quote_plus
 from dotenv import load_dotenv
 from pathlib import Path
 import os
+from urllib.parse import quote_plus
 
 env_path = Path(".") / ".env"
 load_dotenv(dotenv_path=env_path)
@@ -28,6 +29,9 @@ class Settings(BaseSettings):
     POSTGRES_PORT: int = int(os.environ.get("POSTGRES_PORT", 5432))
     POSTGRES_DB: str = os.environ.get("POSTGRES_DB", None)
     DATABASE_URI: str = f"postgresql://{POSTGRES_USER}:%s@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}" % quote_plus(POSTGRES_PASS)
+
+    # encoded_password:str = quote_plus(POSTGRES_PASS)#Propely encode password due @ is a special symbol symbol
+    # DATABASE_URI: str = f"postgresql://{POSTGRES_USER}:{encoded_password}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}"
 
     #JWT Secret Key
     JWT_SECRET: str = os.environ.get("JWT_SECRET", "ad5780b8bd3b2540ef87839b5bb7f617322d9efcb248d7e026d98605780255d6")

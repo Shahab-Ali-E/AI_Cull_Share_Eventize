@@ -17,13 +17,11 @@ def create_event_in_S3_store_meta_to_DB(event_name, request, s3_utils_obj, db_se
 
     #save created folder meta data in DB
     location_in_s3 = f'{settings.AWS_BUCKET_SMART_SHARE_NAME}/{user_id}/{event_name}'
+    match_criteria = {'name':event_name, location_in_s3:location_in_s3, 'module':settings.APP_SMART_SHARE_MODULE, 'user_id':user_id}
     try:
-        save_or_update_metadata_in_db(DBModel=FoldersInS3,
-                                             module_name='smart_share',
-                                             folder_name=event_name,
-                                             session=db_session,
-                                             user_id=user_id,
-                                             location_in_s3=location_in_s3
+        save_or_update_metadata_in_db(
+                                        session=db_session,
+                                       match_criteria=match_criteria
                                     )
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f'{str(e)}')

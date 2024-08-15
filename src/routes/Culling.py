@@ -103,11 +103,13 @@ async def upload_images(request: Request, folder: str, images: list[UploadFile] 
 
     # Validation if combined size of images is greater than available size and check image validation
     storage_used = session.query(User.total_culling_storage_used).filter(User.id == user_id).scalar()
-    is_valid, output = await validate_images_and_storage(files=images, 
-                                                                     max_uploads=20, 
-                                                                     max_size_mb=100,
-                                                                     max_storage_size=settings.MAX_SMART_CULL_MODULE_STORAGE,
-                                                                     db_storage_used=storage_used)
+    is_valid, output = await validate_images_and_storage(
+                                                        files=images, 
+                                                        max_uploads=20, 
+                                                        max_size_mb=100,
+                                                        max_storage_size=settings.MAX_SMART_CULL_MODULE_STORAGE,
+                                                        db_storage_used=storage_used
+                                                        )
     if not is_valid:
         raise HTTPException(status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, detail=output)
     

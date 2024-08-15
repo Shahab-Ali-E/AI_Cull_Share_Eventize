@@ -11,6 +11,8 @@ from Celery.utils import create_celery
 import requests
 from celery import chain
 from PIL import Image
+from services.Culling.tasks.cullingTask import get_images_from_aws
+
 #---instances---
 settings = get_settings()
 celery = create_celery()
@@ -21,27 +23,27 @@ face_extractor = cv2.CascadeClassifier(settings.FACE_CASCADE_MODEL)
 #---------------------Independent Tasks For Image Share------------------------------------------------
 
 #This task is used to get images from AWS server from the link which have provided as param to it 
-@celery.task(name='get_images_from_aws', bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={'max_retries':5}, queue='image_share')
-def get_images_from_aws(self, uploaded_images_url):
-    images = []
+# @celery.task(name='get_images_from_aws', bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={'max_retries':5}, queue='image_share')
+# def get_images_from_aws(self, uploaded_images_url):
+#     images = []
 
-    for index, image in enumerate(uploaded_images_url):
-        response = requests.get(image)
-        image_content = response.content
-        content_type = 'image/'+ image.split('/')[-1].split('.')[-1].split('?')[0]
-        image_name = image.split("/")[-1].split('?')[0]
-        image_size = len(image_content)
+#     for index, image in enumerate(uploaded_images_url):
+#         response = requests.get(image)
+#         image_content = response.content
+#         content_type = 'image/'+ image.split('/')[-1].split('.')[-1].split('?')[0]
+#         image_name = image.split("/")[-1].split('?')[0]
+#         image_size = len(image_content)
 
-        images.append({
-            'content_type': content_type,
-            'name': image_name,
-            'size': image_size,
-            'content': image_content
-        })
-        progress = ((index + 1) / len(uploaded_images_url)) * 100
-        self.update_state(state='PROGRESS', meta={"progress": progress, "info": "Getting images to process"})
+#         images.append({
+#             'content_type': content_type,
+#             'name': image_name,
+#             'size': image_size,
+#             'content': image_content
+#         })
+#         progress = ((index + 1) / len(uploaded_images_url)) * 100
+#         self.update_state(state='PROGRESS', meta={"progress": progress, "info": "Getting images to process"})
     
-    return images
+#     return images
 
 @celery.task(name='extract_faces', bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={'max_retries':5}, queue='image_share')
 # This task will extract all faces from image
@@ -128,7 +130,7 @@ def generate_embeddings(self, faces_data):
 
 #-----------------------Chaining All Above Task Here----------------------------------
 
-@celery.task(name='upload_image_s3_store_metadata_in_DB', bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={'max_retries':5}, queue='culling')
+@celery.task(name='image_share_task', bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={'max_retries':2}, queue='smart_sharing')
 def image_share_task(self, user_id, uploaded_images_url):
 
     self.update_state(state='STARTED', meta={'status': 'Task started'})
