@@ -28,8 +28,7 @@ async def preprocess_image_before_embedding(event_name:str, images:list, s3_util
     uploaded_images_url =[]
 
     for image in images:
-        filename = f'{uuid4()}_{image.filename}'
-        
+        filename = f'{uuid4()}_{image.filename}' 
         #some image validation
         try:
             image_data = await image.read()
@@ -48,19 +47,20 @@ async def preprocess_image_before_embedding(event_name:str, images:list, s3_util
             uploaded_images_url.append(presigned_url)
         except Exception as e:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Error uploading image to S3: {str(e)}")
-    
-    #adding images metadata in databse
-    images_meta_data = save_image_metadata_to_DB(
-                                session=db_session,
-                                img_filename=image.filename,
-                                img_content_type=image.content_type,
-                                user_id=user_id,
-                                img_id=filename,
-                                bucket_folder='/'.join(key.split('/')[:2]),
-                                folder_id=folder_id
-                            )
-    if not images_meta_data:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Error saving images meta data to database")
+        
+        #adding images metadata in databse
+        images_meta_data = save_image_metadata_to_DB(
+                                    session=db_session,
+                                    img_filename=image.filename,
+                                    img_content_type=image.content_type,
+                                    user_id=user_id,
+                                    img_id=filename,
+                                    bucket_folder='/'.join(key.split('/')[:2]),
+                                    folder_id=folder_id
+                                )
+        
+        if not images_meta_data:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Error saving images meta data to database")
     
     #updating the storage of folder in database
     match_criteria = {"name": event_name, "user_id": user_id, "module":settings.APP_SMART_SHARE_MODULE}

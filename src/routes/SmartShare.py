@@ -27,7 +27,8 @@ settings = get_settings()
 s3_utils = S3Utils(aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
                     aws_region=settings.AWS_REGION,
                     aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
-                    bucket_name=settings.AWS_BUCKET_SMART_SHARE_NAME)
+                    bucket_name=settings.AWS_BUCKET_SMART_SHARE_NAME,
+                    aws_endpoint_url=settings.AWS_ENDPOINT_URL)
 
 
 @router.post('/create-event/{event_name}', status_code=status.HTTP_201_CREATED)
@@ -59,23 +60,20 @@ async def upload_images(request: Request, event_name: str, images: list[UploadFi
     if not is_valid:
         raise HTTPException(status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, detail=output)
     
-    #uplaoding image to s3, updating meta data in database and return presinged url
-    response  = await preprocess_image_before_embedding(event_name=event_name,
-                                                        images=images,
-                                                        s3_utils=s3_utils,
-                                                        session=session,
-                                                        total_image_size=output,
-                                                        user_id=user_id,
-                                                        folder_id=folder_data.id
-                                                        )
+    try:
+        #uplaoding image to s3, updating meta data in database and return presinged url
+        response  = await preprocess_image_before_embedding(event_name=event_name,
+                                                            images=images,
+                                                            s3_utils=s3_utils,
+                                                            db_session=session,
+                                                            total_image_size=output,
+                                                            user_id=user_id,
+                                                            folder_id=folder_data.id
+                                                            )
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
     
-    if isinstance(response, dict):  # Ensure response is serializable
-        return JSONResponse(content=response)
-    else:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="An unexpected error occurred"
-        )
+    return response
     
 @router.post('/share_images')
 async def share_images(culling_data:cullingData, request:Request, db_session:Session = Depends(get_db)):
@@ -84,6 +82,7 @@ async def share_images(culling_data:cullingData, request:Request, db_session:Ses
     #Sending images URL and other info to Celery task
     try:
         task = image_share_task.apply_async(args=[user_id, culling_data.images_url])
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error sending task to Celery: {str(e)}")
 

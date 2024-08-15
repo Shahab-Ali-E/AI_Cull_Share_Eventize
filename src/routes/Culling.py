@@ -33,7 +33,8 @@ settings = get_settings()
 s3_utils = S3Utils(aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
                     aws_region=settings.AWS_REGION,
                     aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
-                    bucket_name=settings.AWS_BUCKET_SMART_CULL_NAME)
+                    bucket_name=settings.AWS_BUCKET_SMART_CULL_NAME,
+                    aws_endpoint_url=settings.AWS_ENDPOINT_URL)
 
 
 @router.post('/create_directory/{dir_name}', status_code=status.HTTP_201_CREATED)

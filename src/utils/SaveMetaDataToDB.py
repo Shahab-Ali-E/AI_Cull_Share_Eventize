@@ -50,7 +50,10 @@ def save_or_update_metadata_in_db(session: Session, match_criteria: dict, update
                 setattr(existing_record, key, value)
             session.commit()
             session.refresh(existing_record)
-            return {"status": "success", "data": existing_record}
+            
+            # Convert the SQLAlchemy model instance to a dictionary
+            updated_record_dict = {key: getattr(existing_record, key) for key in existing_record.__dict__.keys() if not key.startswith('_')}
+            return {"status": "success", "data": updated_record_dict}
         
         else:
             # Create a new record

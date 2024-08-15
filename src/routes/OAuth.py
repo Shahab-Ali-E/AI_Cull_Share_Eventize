@@ -37,11 +37,16 @@ async def auth(request: Request, session: Session = Depends(get_db)):
 @router.get('/logout')
 async def logout(request: Request):
     user = request.session.get("user_id")
+    
     if not user:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="you are not logged in")
     request.session.pop("user_id")
-    return RedirectResponse(url='/')
+    request.session.clear()
+    
+    response = RedirectResponse(url='/')
+    response.delete_cookie(key='session')
 
+    return response
 
 # Welcome route after login
 @welcome_route.get('/welcome', response_model=userResponse)

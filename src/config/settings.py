@@ -49,6 +49,7 @@ class Settings(BaseSettings):
     AWS_BUCKET_SMART_CULL_NAME :str = os.environ.get("AWS_BUCKET_SMART_CULL_NAME",None)
     AWS_BUCKET_SMART_SHARE_NAME: str = os.environ.get('AWS_BUCKET_SMART_SHARE_NAME',None)
     PRESIGNED_URL_EXPIRY_SEC:int = os.environ.get('PRESIGNED_URL_EXPIRY_SEC',1800)
+    AWS_ENDPOINT_URL:str = os.environ.get('AWS_ENDPOINT_URL',None)
   
     #AWS FOLDERS
     IMAGES_BEFORE_CULLING_STARTS_Folder:str = os.environ.get("IMAGES_BEFORE_CULLING_STARTS_Folder",None)

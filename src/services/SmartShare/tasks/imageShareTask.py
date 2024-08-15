@@ -1,17 +1,14 @@
-from io import BytesIO
 from fastapi.responses import JSONResponse
-from numpy import asarray
-from fastapi import HTTPException
 from config.settings import get_settings
 import cv2
 import torch
 import numpy as np
 from transformers import AutoImageProcessor, ResNetForImageClassification 
 from Celery.utils import create_celery
-import requests
 from celery import chain
 from PIL import Image
 from services.Culling.tasks.cullingTask import get_images_from_aws
+import requests
 
 #---instances---
 settings = get_settings()
@@ -22,7 +19,7 @@ face_extractor = cv2.CascadeClassifier(settings.FACE_CASCADE_MODEL)
 
 #---------------------Independent Tasks For Image Share------------------------------------------------
 
-#This task is used to get images from AWS server from the link which have provided as param to it 
+# #This task is used to get images from AWS server from the link which have provided as param to it 
 # @celery.task(name='get_images_from_aws', bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={'max_retries':5}, queue='image_share')
 # def get_images_from_aws(self, uploaded_images_url):
 #     images = []
@@ -45,43 +42,45 @@ face_extractor = cv2.CascadeClassifier(settings.FACE_CASCADE_MODEL)
     
 #     return images
 
-@celery.task(name='extract_faces', bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={'max_retries':5}, queue='image_share')
-# This task will extract all faces from image
-def extract_faces(images):
-    # List to store extracted faces data
+@celery.task(name='extract_faces', bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={'max_retries': 5}, queue='smart_sharing')
+def extract_faces(self, images):
     extracted_faces = []
-    image_data = images['content']
-    image_name = images['name']
+    for image in images:
+        image_data = image['content']
+        image_name = image['name']
 
-    try:
-        # Convert byte data to numpy array
-        nparr = np.frombuffer(image_data, np.uint8)
-        if nparr.size == 0:
-            raise ValueError("Converted numpy array is empty")
-        image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-        if image is None or image.size == 0:
-            raise ValueError("Failed to decode image from numpy array") 
-        
-        # Convert the image to grayscale for face detection
-        image_grey = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-
-        # Detect faces in the grayscale image
-        faces = face_extractor.detectMultiScale(image_grey, scaleFactor=1.16, minNeighbors=5, minSize=(25, 25), flags=0)
-
-        # Iterate through detected faces and save them
-        for i,(x, y, w, h) in enumerate(faces):
-            face_image = image[y:y+h, x:x+w]
-            face_pil = Image.fromarray(face_image)#convert array to pillow image obj
-
-            file_name = image_name
+        try:
+            # Convert byte data to numpy array
+            nparr = np.frombuffer(image_data, np.uint8)
+            if nparr.size == 0:
+                raise ValueError("Converted numpy array is empty")
+            image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+            if image is None or image.size == 0:
+                raise ValueError("Failed to decode image from numpy array") 
             
-            extracted_faces.append((file_name, face_pil))
-    except Exception as e:
-        raise Exception(f"Error detecting faces: {str(e)}")
+            # Convert the image to grayscale for face detection
+            image_grey = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+
+            # Detect faces in the grayscale image
+            faces = face_extractor.detectMultiScale(image_grey, scaleFactor=1.16, minNeighbors=5, minSize=(25, 25), flags=0)
+
+            # Iterate through detected faces and save them
+            face_images = []
+            for i,(x, y, w, h) in enumerate(faces):
+                face_image = image[y:y+h, x:x+w]
+                face_pil = Image.fromarray(face_image) # Convert array to pillow image obj
+                face_images.append(face_pil)
+            
+            extracted_faces.append({
+                'name': image_name,
+                'faces': face_images
+            })
+        except Exception as e:
+            raise Exception(f"Error detecting faces in {image_name}: {str(e)}")
 
     return extracted_faces
 
-@celery.task(name='generate_embeddings', bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={'max_retries': 5}, queue='image_share')
+@celery.task(name='generate_embeddings', bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={'max_retries': 5}, queue='smart_sharing')
 def generate_embeddings(self, faces_data):
     # Initialize processor and model for embeddings
     processor = AutoImageProcessor.from_pretrained("microsoft/resnet-50")
@@ -130,13 +129,13 @@ def generate_embeddings(self, faces_data):
 
 #-----------------------Chaining All Above Task Here----------------------------------
 
-@celery.task(name='image_share_task', bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={'max_retries':2}, queue='smart_sharing')
+@celery.task(name='image_share_task', bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={'max_retries': 2}, queue='smart_sharing')
 def image_share_task(self, user_id, uploaded_images_url):
-
     self.update_state(state='STARTED', meta={'status': 'Task started'})
 
-    task_ids=[]
-    # Chain the results
+    task_ids = []
+
+    # Chain the tasks correctly
     chain_result = chain(
         get_images_from_aws.s(uploaded_images_url),
         extract_faces.s(),
@@ -145,7 +144,7 @@ def image_share_task(self, user_id, uploaded_images_url):
 
     result = chain_result.apply_async()
 
-    #to get the task id's of each one in chaining
+    # Get the task IDs of each task in the chain
     task_ids.append(result.id)
     while result.parent:
         result = result.parent
@@ -153,6 +152,6 @@ def image_share_task(self, user_id, uploaded_images_url):
 
     task_ids.reverse()  # Reverse to get the correct order of execution
 
-    self.update_state(state='SUCCESS', meta={'status': 'Culling task executing in background', 'task_ids': task_ids})
+    self.update_state(state='SUCCESS', meta={'status': 'Image sharing task executing in background', 'task_ids': task_ids})
 
     return JSONResponse(task_ids)

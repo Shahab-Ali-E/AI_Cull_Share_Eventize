@@ -62,4 +62,4 @@ async def method_name(request: Request):
     if user:
         return RedirectResponse(url='/welcome') 
     
-    return {"Message": "You are not signed In"}
+    return {"Message": "sign out successfully"}

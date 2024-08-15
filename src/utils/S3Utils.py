@@ -12,10 +12,11 @@ class S3Utils:
         aws_secret_access_key (str): The AWS secret access key.
         bucket_name (str): The name of the S3 bucket.
     """
-    def __init__(self, aws_region, aws_access_key_id, aws_secret_access_key, bucket_name):
+    def __init__(self, aws_region, aws_access_key_id, aws_secret_access_key, bucket_name, aws_endpoint_url):
         self.bucket_name = bucket_name
         self.client = boto3.client(
             service_name="s3",
+            endpoint_url=aws_endpoint_url,
             region_name=aws_region,
             aws_access_key_id=aws_access_key_id,
             aws_secret_access_key=aws_secret_access_key
@@ -139,7 +140,7 @@ class S3Utils:
             self.create_object(root_folder)
         
         if self.folder_exists(event_name):
-            raise Exception(f'Event with name "{event_name}" already exists.')
+            raise HTTPException(f'Event with name "{event_name}" already exists.')
         else:
             self.create_object(event_name)
         
@@ -267,10 +268,10 @@ class S3Utils:
         """
         try:
             url = self.client.generate_presigned_url(
-                'get_object',
+                ClientMethod='get_object',
                 Params={'Bucket': self.bucket_name, 'Key': key},
                 ExpiresIn=expiration
             )
             return url
-        except Exception as e:
-            raise Exception(f"Error generating presigned URL: {str(e)}")
+        except ClientError as e:
+            raise HTTPException(f"Error generating presigned URL: {str(e)}")

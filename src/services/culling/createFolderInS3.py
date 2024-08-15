@@ -31,11 +31,10 @@ def create_folder_in_S3(dir_name, request, s3_utils_obj, db_session):
     
     #save metadata to DB of created folder in S3
     folder_loc_in_s3 = f'{settings.AWS_BUCKET_SMART_CULL_NAME}/{user_id}/{dir_name}'
-    match_criteria = {"name": dir_name, "user_id": user_id, "module":settings.APP_SMART_CULL_MODULE}
+    match_criteria = {"name": dir_name, "user_id": user_id, "module":settings.APP_SMART_CULL_MODULE, 'location_in_s3':folder_loc_in_s3}
     try:
         save_or_update_metadata_in_db(session=db_session,
-                                      match_criteria=match_criteria,
-                                      update_fields={'location_in_s3':folder_loc_in_s3})
+                                      match_criteria=match_criteria)
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f'{str(e)}')
 
