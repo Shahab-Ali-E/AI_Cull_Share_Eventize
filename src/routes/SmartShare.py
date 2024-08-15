@@ -82,7 +82,6 @@ async def share_images(culling_data:cullingData, request:Request, db_session:Ses
     #Sending images URL and other info to Celery task
     try:
         task = image_share_task.apply_async(args=[user_id, culling_data.images_url])
-
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error sending task to Celery: {str(e)}")
 

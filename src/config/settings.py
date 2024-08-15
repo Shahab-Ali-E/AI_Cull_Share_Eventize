@@ -30,6 +30,10 @@ class Settings(BaseSettings):
     POSTGRES_DB: str = os.environ.get("POSTGRES_DB", None)
     DATABASE_URI: str = f"postgresql://{POSTGRES_USER}:%s@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}" % quote_plus(POSTGRES_PASS)
 
+    #QDRANT Database Config
+    QDRANT_API_KEY:str = os.environ.get('QDRANT_API_KEY',None)
+    QDRANT_ENDPOINT_URL:str = os.environ.get('QDRANT_ENDPOINT_URL',None)
+
     # encoded_password:str = quote_plus(POSTGRES_PASS)#Propely encode password due @ is a special symbol symbol
     # DATABASE_URI: str = f"postgresql://{POSTGRES_USER}:{encoded_password}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}"
 
@@ -74,6 +78,9 @@ class Settings(BaseSettings):
     #CLOSED EYE DETECTIO MODEL
     CLOSED_EYE_DETECTION_MODEL : str = os.environ.get("CLOSED_EYE_DETECTION_MODEL",None)
     FACE_CASCADE_MODEL: str = os.environ.get("FACE_CASCADE_MODEL",None)
+
+    #FACE_EMBEDDING_GENERATOR_MODEL
+    FACE_EMBEDDING_GENERATOR_MODEL:str = os.environ.get('FACE_EMBEDDING_GENERATOR_MODEL',None)
 
     #CELERY VARIABLES
     CELERY_BROKER_URL:str = os.environ.get("CELERY_BROKER_URL",None)

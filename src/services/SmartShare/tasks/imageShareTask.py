@@ -83,8 +83,8 @@ def extract_faces(self, images):
 @celery.task(name='generate_embeddings', bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={'max_retries': 5}, queue='smart_sharing')
 def generate_embeddings(self, faces_data):
     # Initialize processor and model for embeddings
-    processor = AutoImageProcessor.from_pretrained("microsoft/resnet-50")
-    model = ResNetForImageClassification.from_pretrained("microsoft/resnet-50")
+    processor = AutoImageProcessor.from_pretrained(settings.FACE_EMBEDDING_GENERATOR_MODEL)
+    model = ResNetForImageClassification.from_pretrained(settings.FACE_EMBEDDING_GENERATOR_MODEL)
 
     all_embeddings = []
 
