@@ -45,7 +45,7 @@ async def upload_images(request: Request, event_name: str, images: list[UploadFi
     # Checking if that folder exists in the database or not
     folder_data = session.query(FoldersInS3).filter(FoldersInS3.name == event_name, FoldersInS3.module == settings.APP_SMART_SHARE_MODULE).first()
     if not folder_data:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f'Could not find folder with {event_name} in culling module')
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f'Could not find folder with {event_name} in smart share')
 
 
     # Validation if combined size of images is greater than available size and check image validation
@@ -81,7 +81,7 @@ async def share_images(culling_data:cullingData, request:Request, db_session:Ses
     user_id = request.session.get("user_id")
     #Sending images URL and other info to Celery task
     try:
-        task = image_share_task.apply_async(args=[user_id, culling_data.images_url])
+        task = image_share_task.apply_async(args=[user_id, culling_data.images_url, culling_data.folder_name ])
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error sending task to Celery: {str(e)}")
 

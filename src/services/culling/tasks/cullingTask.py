@@ -6,6 +6,7 @@ from services.Culling.separateBlurImages import separate_blur_images
 from fastapi.responses import JSONResponse
 from config.settings import get_settings
 from services.Culling.separateClosedEye import ClosedEyeDetection
+from utils.CustomExceptions import URLExpiredException
 from utils.S3Utils import S3Utils
 from config.Database import session
 from model.ImagesMetaData import ImagesMetaData
@@ -51,14 +52,18 @@ def get_images_from_aws(self, uploaded_images_url):
         image_name = image.split("/")[-1].split('?')[0]
         image_size = len(image_content)
 
-        images.append({
-            'content_type': content_type,
-            'name': image_name,
-            'size': image_size,
-            'content': image_content
-        })
-        progress = ((index + 1) / len(uploaded_images_url)) * 100
-        self.update_state(state='PROGRESS', meta={"progress": progress, "info": "Getting images to process"})
+        if b'<Error>' in image_content and b'<Code>AccessDenied</Code>' in image_content:
+            raise URLExpiredException()
+        
+        else:
+            images.append({
+                'content_type': content_type,
+                'name': image_name,
+                'size': image_size,
+                'content': image_content
+            })
+            progress = ((index + 1) / len(uploaded_images_url)) * 100
+            self.update_state(state='PROGRESS', meta={"progress": progress, "info": "Getting images to process"})
     
     return images
 
@@ -70,8 +75,7 @@ def blur_image_separation(self, images, user_id, folder, folder_id):
     #database session
     db_session:Session = session()
     
-
-    # # #perform blur detection on image and separate them
+    #perform blur detection on image and separate them
     output_from_blur =  asyncio.run(separate_blur_images(images=images,
                                         feature_extractor=feature_extractor,
                                         blur_detect_model=blur_detect_model, 
@@ -117,25 +121,33 @@ def culling_task(self, user_id, uploaded_images_url, folder, folder_id):
     self.update_state(state='STARTED', meta={'status': 'Task started'})
 
     task_ids=[]
-    # Chain the results
-    chain_result = chain(
-        get_images_from_aws.s(uploaded_images_url),
-        blur_image_separation.s(user_id, folder, folder_id),
-        closed_eye_separation.s(user_id, folder, folder_id)
-    ) 
+    try:
+        # Chain the results
+        chain_result = chain(
+            get_images_from_aws.s(uploaded_images_url),
+            blur_image_separation.s(user_id, folder, folder_id),
+            closed_eye_separation.s(user_id, folder, folder_id)
+        ) 
 
-    result = chain_result.apply_async()
+        result = chain_result.apply_async()
 
 
-    #to get the task id's of each one in chaining
-    task_ids.append(result.id)
-    while result.parent:
-        result = result.parent
+        #to get the task id's of each one in chaining
         task_ids.append(result.id)
+        while result.parent:
+            result = result.parent
+            task_ids.append(result.id)
 
-    task_ids.reverse()  # Reverse to get the correct order of execution
+        task_ids.reverse()  # Reverse to get the correct order of execution
 
-    self.update_state(state='SUCCESS', meta={'status': 'Culling task executing in background', 'task_ids': task_ids})
+        self.update_state(state='SUCCESS', meta={'status': 'Culling task executing in background', 'task_ids': task_ids})
+    
+    except URLExpiredException() as e:
+        self.update_state(state='FAILURE', meta={'status': str(e), 'task_ids': task_ids})
+        raise
+    except Exception as e:
+        self.update_state(state='FAILURE', meta={'status': f"Unexpected error: {str(e)}", 'task_ids': task_ids})
+        raise
 
     return JSONResponse(task_ids)
 

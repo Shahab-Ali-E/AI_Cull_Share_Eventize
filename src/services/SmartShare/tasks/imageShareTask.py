@@ -1,3 +1,4 @@
+import asyncio
 from fastapi.responses import JSONResponse
 from config.settings import get_settings
 import cv2
@@ -8,39 +9,19 @@ from Celery.utils import create_celery
 from celery import chain
 from PIL import Image
 from services.Culling.tasks.cullingTask import get_images_from_aws
+from utils.CustomExceptions import URLExpiredException
+from utils.QdrantUtils import QdrantUtils
 import requests
 
 #---instances---
 settings = get_settings()
 celery = create_celery()
+qdrant_util = QdrantUtils()
 
 #---Model---
 face_extractor = cv2.CascadeClassifier(settings.FACE_CASCADE_MODEL)
 
 #---------------------Independent Tasks For Image Share------------------------------------------------
-
-# #This task is used to get images from AWS server from the link which have provided as param to it 
-# @celery.task(name='get_images_from_aws', bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={'max_retries':5}, queue='image_share')
-# def get_images_from_aws(self, uploaded_images_url):
-#     images = []
-
-#     for index, image in enumerate(uploaded_images_url):
-#         response = requests.get(image)
-#         image_content = response.content
-#         content_type = 'image/'+ image.split('/')[-1].split('.')[-1].split('?')[0]
-#         image_name = image.split("/")[-1].split('?')[0]
-#         image_size = len(image_content)
-
-#         images.append({
-#             'content_type': content_type,
-#             'name': image_name,
-#             'size': image_size,
-#             'content': image_content
-#         })
-#         progress = ((index + 1) / len(uploaded_images_url)) * 100
-#         self.update_state(state='PROGRESS', meta={"progress": progress, "info": "Getting images to process"})
-    
-#     return images
 
 @celery.task(name='extract_faces', bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={'max_retries': 5}, queue='smart_sharing')
 def extract_faces(self, images):
@@ -112,46 +93,61 @@ def generate_embeddings(self, faces_data):
 
             embeddings = outputs.logits
 
-            # Append names and their corresponding embeddings
-            image_embeddings = []
             for embedding in embeddings:
-                image_embeddings.append(embedding.cpu().numpy())  # Convert embeddings to numpy arrays for easier handling
+                all_embeddings.append({
+                    'name': image_name,
+                    'embeddings':embedding.cpu().numpy()
+                }) # Convert embeddings to numpy arrays for easier handling
 
-            all_embeddings.append({
-                'name': image_name,
-                'embeddings': image_embeddings
-            })
     except Exception as e:
         raise Exception(f"Error generating embeddings: {str(e)}")
 
     return all_embeddings
 
+@celery.task(name='uploading_embeddings', bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={'max_retries': 5}, queue='smart_sharing')
+def uploading_embeddings(self, all_embeddings, event_name):
+    response = qdrant_util.upload_image_embeddings(
+                                                                collection_name=event_name,
+                                                                vector_data=all_embeddings,
+                                                                embedding_size=1000
+                                                                )
+                            # )
+    
+    return response
 
 #-----------------------Chaining All Above Task Here----------------------------------
 
 @celery.task(name='image_share_task', bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={'max_retries': 2}, queue='smart_sharing')
-def image_share_task(self, user_id, uploaded_images_url):
-    self.update_state(state='STARTED', meta={'status': 'Task started'})
+def image_share_task(self, user_id:str, uploaded_images_url:list, event_name:str):
+    # self.update_state(state='STARTED', meta={'status': 'Task started'})
 
     task_ids = []
+    try:
+        # Chain the tasks correctly
+        chain_result = chain(
+            get_images_from_aws.s(uploaded_images_url),
+            extract_faces.s(),
+            generate_embeddings.s(),
+            uploading_embeddings.s(event_name)
+        )
 
-    # Chain the tasks correctly
-    chain_result = chain(
-        get_images_from_aws.s(uploaded_images_url),
-        extract_faces.s(),
-        generate_embeddings.s()
-    )
+        result = chain_result.apply_async()
 
-    result = chain_result.apply_async()
-
-    # Get the task IDs of each task in the chain
-    task_ids.append(result.id)
-    while result.parent:
-        result = result.parent
+        # Get the task IDs of each task in the chain
         task_ids.append(result.id)
+        while result.parent:
+            result = result.parent
+            task_ids.append(result.id)
 
-    task_ids.reverse()  # Reverse to get the correct order of execution
+        task_ids.reverse()  # Reverse to get the correct order of execution
 
-    self.update_state(state='SUCCESS', meta={'status': 'Image sharing task executing in background', 'task_ids': task_ids})
-
+        self.update_state(state='SUCCESS', meta={'status': 'Image sharing task executing in background', 'task_ids': task_ids})
+    
+    except URLExpiredException() as e:
+        self.update_state(state='FAILURE', meta={'status': str(e), 'task_ids': task_ids})
+        raise
+    except Exception as e:
+        self.update_state(state='FAILURE', meta={'status': f"Unexpected error: {str(e)}", 'task_ids': task_ids})
+        raise
+    
     return JSONResponse(task_ids)
