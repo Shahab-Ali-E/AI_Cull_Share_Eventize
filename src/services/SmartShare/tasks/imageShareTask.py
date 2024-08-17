@@ -1,4 +1,3 @@
-import asyncio
 from fastapi.responses import JSONResponse
 from config.settings import get_settings
 import cv2
@@ -9,9 +8,10 @@ from Celery.utils import create_celery
 from celery import chain
 from PIL import Image
 from services.Culling.tasks.cullingTask import get_images_from_aws
+from services.SmartShare.extractFace import extract_face
+from services.SmartShare.generateEmeddings import generate_face_embeddings
 from utils.CustomExceptions import URLExpiredException
 from utils.QdrantUtils import QdrantUtils
-import requests
 
 #---instances---
 settings = get_settings()
@@ -26,92 +26,61 @@ face_extractor = cv2.CascadeClassifier(settings.FACE_CASCADE_MODEL)
 @celery.task(name='extract_faces', bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={'max_retries': 5}, queue='smart_sharing')
 def extract_faces(self, images):
     extracted_faces = []
+
     for image in images:
         image_data = image['content']
         image_name = image['name']
 
-        try:
-            # Convert byte data to numpy array
-            nparr = np.frombuffer(image_data, np.uint8)
-            if nparr.size == 0:
-                raise ValueError("Converted numpy array is empty")
-            image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-            if image is None or image.size == 0:
-                raise ValueError("Failed to decode image from numpy array") 
-            
-            # Convert the image to grayscale for face detection
-            image_grey = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-
-            # Detect faces in the grayscale image
-            faces = face_extractor.detectMultiScale(image_grey, scaleFactor=1.16, minNeighbors=5, minSize=(25, 25), flags=0)
-
-            # Iterate through detected faces and save them
-            face_images = []
-            for i,(x, y, w, h) in enumerate(faces):
-                face_image = image[y:y+h, x:x+w]
-                face_pil = Image.fromarray(face_image) # Convert array to pillow image obj
-                face_images.append(face_pil)
-            
-            extracted_faces.append({
-                'name': image_name,
-                'faces': face_images
-            })
-        except Exception as e:
-            raise Exception(f"Error detecting faces in {image_name}: {str(e)}")
+        faces = extract_face(face_extractor_model=face_extractor,
+                     image_content=image_data,
+                     image_name=image_name)
+        
+        extract_faces.append(faces)
 
     return extracted_faces
 
+
 @celery.task(name='generate_embeddings', bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={'max_retries': 5}, queue='smart_sharing')
 def generate_embeddings(self, faces_data):
+
     # Initialize processor and model for embeddings
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(device)
     processor = AutoImageProcessor.from_pretrained(settings.FACE_EMBEDDING_GENERATOR_MODEL)
-    model = ResNetForImageClassification.from_pretrained(settings.FACE_EMBEDDING_GENERATOR_MODEL)
+    model = ResNetForImageClassification.from_pretrained(settings.FACE_EMBEDDING_GENERATOR_MODEL).to(device)
 
-    all_embeddings = []
+    all_results=[]
 
-    try:
-        for face_data in faces_data:
-            image_name = face_data['name']
-            pil_objs = face_data['faces']
+    for face_data in faces_data:
+        image_name = face_data['name']
+        pil_objs_array = face_data['faces']
+        
+        for pil_obj in pil_objs_array: 
 
-            if not pil_objs:
-                continue  # Skip if no faces detected
+            if not pil_obj:
+                continue #skip if no face pillow obj found
 
-            # Process images into tensors
-            inputs = processor(
-                images=pil_objs,
-                return_tensors='pt'  # Use 'pt' for PyTorch tensors
+            embeddings = generate_face_embeddings(
+                image_name=image_name,
+                image_pillow_obj=pil_obj,
+                model=model,
+                processor=processor
             )
+            
+            all_results.append(embeddings)
 
-            pixel_values = inputs['pixel_values']
-            if isinstance(pixel_values, list):
-                pixel_values = torch.stack(pixel_values)
+    return all_results
 
-            # Get model output
-            with torch.no_grad():  # Disable gradient calculation
-                outputs = model(pixel_values=pixel_values)
-
-            embeddings = outputs.logits
-
-            for embedding in embeddings:
-                all_embeddings.append({
-                    'name': image_name,
-                    'embeddings':embedding.cpu().numpy()
-                }) # Convert embeddings to numpy arrays for easier handling
-
-    except Exception as e:
-        raise Exception(f"Error generating embeddings: {str(e)}")
-
-    return all_embeddings
+    
 
 @celery.task(name='uploading_embeddings', bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={'max_retries': 5}, queue='smart_sharing')
-def uploading_embeddings(self, all_embeddings, event_name):
+def uploading_embeddings(self, all_embeddings, event_name:str):
+    embedding_size = len(all_embeddings[0]['embeddings'])
     response = qdrant_util.upload_image_embeddings(
-                                                                collection_name=event_name,
-                                                                vector_data=all_embeddings,
-                                                                embedding_size=1000
-                                                                )
-                            # )
+                                                    collection_name=event_name,
+                                                    vector_data=all_embeddings,
+                                                    embedding_size=embedding_size
+                                                )
     
     return response
 

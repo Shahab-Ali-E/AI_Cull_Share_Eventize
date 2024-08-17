@@ -217,7 +217,7 @@ async def get_folder_by_name(request:Request,folder: str, user:User = Depends(ge
     pass
 
 @router.delete("/delete-folder/{dir_name}")
-def delete_folder(dir_name:str, request:Request, Session = Depends(get_db)):
+def delete_folder(dir_name:str, request:Request, session:Session = Depends(get_db)):
     """
     Deletes a Folder from S3 and Removes its Record from the Database
 
@@ -247,7 +247,7 @@ def delete_folder(dir_name:str, request:Request, Session = Depends(get_db)):
     folder_path = f'{user_id}/{dir_name}/'
 
     return delete_folder_in_s3_and_update_DB(del_folder_path=folder_path,
-                                             db_session=Session, 
+                                             db_session=session, 
                                              s3_obj=s3_utils,
                                              module=settings.APP_SMART_CULL_MODULE,
                                              user_id=user_id)

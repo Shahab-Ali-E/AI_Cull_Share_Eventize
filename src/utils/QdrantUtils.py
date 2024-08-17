@@ -2,6 +2,7 @@ from qdrant_client import QdrantClient, models
 from config.settings import get_settings
 from qdrant_client.models import VectorParams, Distance
 from uuid import uuid4
+from fastapi import HTTPException,status
 
 settings = get_settings()
 
@@ -11,7 +12,6 @@ class QdrantUtils:
             url = settings.QDRANT_ENDPOINT_URL,
             api_key = settings.QDRANT_API_KEY,
         )
-
 
     #Put data or embedding into collection
     def upload_image_embeddings(self, collection_name:str, embedding_size:int, vector_data:list):
@@ -62,8 +62,44 @@ class QdrantUtils:
         else:
             return {"error": "No valid vector data provided."}
 
+    def see_images(self, results, top_k=2):
+        for i in range(top_k):
+            # image_id = results[i].payload['image_id']
+            name    = results[i].payload['image_name']
+            score = results[i].score
+            # image = Image.open(files_list[image_id])
 
+            print(f"Result #{i+1}: {name} was diagnosed with {score * 100} confidence")
+            print(f"This image score was {score}")
+            # display(image)
+            print("-" * 50)
+            print()
 
     #It will get collections
-    def get_collection(self):
-        pass
+    def search_points(self, collection_name:str, one_face_embedding):
+        try:
+            # print(one_face_embedding)
+            # Calculate the mean along dimension 1
+            # query_vector = one_face_embedding.mean()[0].tolist()
+            # print(query_vector)
+            passresults = self.qdrant_client.search(
+                collection_name=collection_name,
+                query_vector=one_face_embedding,
+                limit=5,
+                with_payload=True
+            )
+            
+            self.see_images(results=passresults,top_k=2)
+
+        except Exception as e:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Error occurred while searching points: {e}")
+
+
+    def remove_collection(self, collection_name:str):
+        try:
+            response = self.qdrant_client.delete_collection(collection_name=collection_name)
+        except Exception as e:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Error occurred while deleting the collection: {e}")
+
+        # Optionally, return the full response object
+        return response

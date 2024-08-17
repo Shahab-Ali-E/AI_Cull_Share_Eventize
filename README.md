@@ -22,3 +22,6 @@
 
 # Local running servers
 `1. RabbitMQ was running on http://localhost:15672/`
+
+"""you need to install torch by this command"""
+`pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121`

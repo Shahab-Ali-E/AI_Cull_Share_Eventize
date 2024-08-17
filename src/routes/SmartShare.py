@@ -8,9 +8,12 @@ from schemas.cullingData import cullingData
 from services.Auth.google_auth import get_user
 from sqlalchemy.orm import Session
 from config.settings import get_settings
+from services.Culling.deleteFolderFromS3 import delete_folder_in_s3_and_update_DB
 from services.SmartShare.createEvent import create_event_in_S3_store_meta_to_DB
+from services.SmartShare.getImagesByFaceRecog import get_images_by_face_recog
 from services.SmartShare.imagePreProcessEmbeddings import preprocess_image_before_embedding
 from services.SmartShare.tasks.imageShareTask import image_share_task
+from utils.QdrantUtils import QdrantUtils
 from utils.S3Utils import S3Utils
 
 
@@ -22,13 +25,14 @@ router = APIRouter(
 
 #instance of settings
 settings = get_settings()
-
 #instance of S3
 s3_utils = S3Utils(aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
                     aws_region=settings.AWS_REGION,
                     aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
                     bucket_name=settings.AWS_BUCKET_SMART_SHARE_NAME,
                     aws_endpoint_url=settings.AWS_ENDPOINT_URL)
+#instance of Qdrat
+qdrant_util = QdrantUtils()
 
 
 @router.post('/create-event/{event_name}', status_code=status.HTTP_201_CREATED)
@@ -75,8 +79,8 @@ async def upload_images(request: Request, event_name: str, images: list[UploadFi
     
     return response
     
-@router.post('/share_images')
-async def share_images(culling_data:cullingData, request:Request, db_session:Session = Depends(get_db)):
+@router.post('/share_images',status_code=status.HTTP_102_PROCESSING)
+async def share_images(culling_data:cullingData, request:Request, ):
 
     user_id = request.session.get("user_id")
     #Sending images URL and other info to Celery task
@@ -86,3 +90,42 @@ async def share_images(culling_data:cullingData, request:Request, db_session:Ses
         raise HTTPException(status_code=500, detail=f"Error sending task to Celery: {str(e)}")
 
     return JSONResponse({"task_id": task.id})
+
+
+@router.delete('/delete_event/{event_name}', status_code=status.HTTP_204_NO_CONTENT)
+async def delete_event(event_name:str, request:Request, session:Session =  Depends(get_db)):
+
+    user_id = request.session.get('user_id')
+    folder_path = f'{user_id}/{event_name}/'
+    try:
+        s3_DB_response = delete_folder_in_s3_and_update_DB(del_folder_path=folder_path,
+                                                            db_session=session, 
+                                                            s3_obj=s3_utils,
+                                                            module=settings.APP_SMART_SHARE_MODULE,
+                                                            user_id=user_id
+                                                        )
+        
+        qdrant_response = qdrant_util.remove_collection(collection_name=event_name)
+        if not qdrant_response:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Collection {event_name} is not found")
+        
+        return s3_DB_response
+
+    except HTTPException as e:
+        # Handle specific HTTP exceptions if needed
+        raise e
+
+    except Exception as e:
+        # Handle other exceptions and provide a generic error message
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+    
+
+@router.post('/get_images',status_code=status.HTTP_102_PROCESSING)
+async def get_images(event_name:str, request:Request, image: UploadFile = File(...), session:Session =  Depends(get_db)):
+    user_id = request.session.get('user_id')
+
+    return await get_images_by_face_recog(db_session=session,
+                                    event_name=event_name,
+                                    image=image,
+                                    qdrant_util=qdrant_util,
+                                    user_id=user_id)
