@@ -85,11 +85,14 @@ class QdrantUtils:
             passresults = self.qdrant_client.search(
                 collection_name=collection_name,
                 query_vector=one_face_embedding,
-                limit=5,
-                with_payload=True
+                limit=1000,
+                with_payload=True,
+                search_params=models.SearchParams(
+                exact=True,  # Turns on the exact search mode
+                ),
             )
             
-            self.see_images(results=passresults,top_k=2)
+            self.see_images(results=passresults,top_k=1000)
 
         except Exception as e:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Error occurred while searching points: {e}")

@@ -25,3 +25,7 @@
 
 """you need to install torch by this command"""
 `pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121`
+`make sure to install cmake in your system locally`
+
+`here are the vgg face weights are stored`
+`C:\Users\Shahab Ali\.deepface\weights\vgg_face_weights.h5`

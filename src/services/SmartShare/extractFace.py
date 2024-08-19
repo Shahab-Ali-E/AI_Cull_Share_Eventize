@@ -1,8 +1,15 @@
 import numpy as np
 import cv2
 from PIL import Image
+from mtcnn import MTCNN
+import torch
 
-def extract_face(image_content, image_name:str, face_extractor_model):
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print(device)
+detector = MTCNN()
+
+def extract_face(image_content, image_name:str):
     try:
         # Convert byte data to numpy array
         nparr = np.frombuffer(image_content, np.uint8)
@@ -13,16 +20,18 @@ def extract_face(image_content, image_name:str, face_extractor_model):
             raise ValueError("Failed to decode image from numpy array") 
         
         # Convert the image to grayscale for face detection
-        image_grey = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
-        # Detect faces in the grayscale image
-        faces = face_extractor_model.detectMultiScale(image_grey, scaleFactor=1.16, minNeighbors=5, minSize=(25, 25), flags=0)
+        # Detect faces in the image
+        detections = detector.detect_faces(image_rgb)
 
         # Iterate through detected faces and save them
         face_images = []
-        for (x, y, w, h) in faces:
-            face_image = image[y:y+h, x:x+w]
-            face_pil = Image.fromarray(face_image) # Convert array to pillow image obj
+        for detection in detections:
+            x, y, width, height = detection['box']
+            x, y = max(0, x), max(0, y)  # Ensure coordinates are positive
+            face_image = image_rgb[y:y+height, x:x+width]
+            face_pil = Image.fromarray(face_image)  # Convert array to PIL image object
             face_images.append(face_pil)
         
         return{

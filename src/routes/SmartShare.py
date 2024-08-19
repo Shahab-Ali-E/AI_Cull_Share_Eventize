@@ -16,6 +16,7 @@ from services.SmartShare.tasks.imageShareTask import image_share_task
 from utils.QdrantUtils import QdrantUtils
 from utils.S3Utils import S3Utils
 
+ 
 
 
 router = APIRouter(
@@ -121,11 +122,13 @@ async def delete_event(event_name:str, request:Request, session:Session =  Depen
     
 
 @router.post('/get_images',status_code=status.HTTP_102_PROCESSING)
-async def get_images(event_name:str, request:Request, image: UploadFile = File(...), session:Session =  Depends(get_db)):
+async def get_images(event_name:str, request:Request, image: list[UploadFile] = File(...), session:Session =  Depends(get_db)):
     user_id = request.session.get('user_id')
 
     return await get_images_by_face_recog(db_session=session,
-                                    event_name=event_name,
-                                    image=image,
-                                    qdrant_util=qdrant_util,
-                                    user_id=user_id)
+                                            event_name=event_name,
+                                            image=image,
+                                            qdrant_util=qdrant_util,
+                                            user_id=user_id
+                                        )
+
