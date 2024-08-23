@@ -1,13 +1,11 @@
+from typing import Dict
 from sqlalchemy.orm import Session
 from fastapi import UploadFile, HTTPException,status
 from config.settings import get_settings
 import torch
-from transformers import AutoImageProcessor, ResNetForImageClassification
-import base64
-import io
+from model.ImagesMetaData import ImagesMetaData
 from services.SmartShare.extractFace import extract_face
 from services.SmartShare.generateEmeddings import generate_face_embeddings
-import numpy as np
 from transformers import CLIPImageProcessor, CLIPModel
 
 
@@ -16,14 +14,21 @@ import torch
 import open_clip
 import cv2
 from sentence_transformers import util
-from PIL import Image
+
+from services.SmartShare.similaritySearch import get_similar_images
 
 # from services.SmartShare.similaritySearch import getSimilarity
 #----instances---
 settings = get_settings()
+def image_to_dict(image: ImagesMetaData) -> Dict:
+    return {
+        'id': image.id,
+        'image_name': image.image_name,
+        'user_id': image.user_id,
+        # Add other fields as needed
+    }
 
-
-async def get_images_by_face_recog(image:list[UploadFile], user_id:str, event_name:str, qdrant_util, db_session:Session):
+async def get_images_by_face_recog(image:UploadFile, user_id:str, event_name:str, qdrant_util, db_session:Session):
     
     #Initialize processor and model for embeddings
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -32,53 +37,53 @@ async def get_images_by_face_recog(image:list[UploadFile], user_id:str, event_na
 
     # preprocessor = open_clip.create_model_and_transforms('ViT-B-16-plus-240', pretrained="laion400m_e32")[1]
     # model = open_clip.create_model_and_transforms('ViT-B-16-plus-240', pretrained="laion400m_e32")[0].to(device)
+    # mm = 'openai/clip-vit-base-patch16'
+    model = CLIPModel.from_pretrained(settings.FACE_EMBEDDING_GENERATOR_MODEL).to(device)
+    preprocessor = CLIPImageProcessor.from_pretrained(settings.FACE_EMBEDDING_GENERATOR_MODEL)
 
-    model = CLIPModel.from_pretrained('openai/clip-vit-base-patch32').to(device)
-    preprocessor = CLIPImageProcessor.from_pretrained('openai/clip-vit-base-patch32')
+    content = await image.read()
+    #extract face
+    face_data = extract_face(image_content=content,
+                            image_name=image.filename
+                            )
+    if len(face_data.get('faces')) > 1 or len(face_data.get('faces')) < 1:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f'You can only provide an image of one person—no more, no less')
+
+
+    face_embeddings =  generate_face_embeddings(image_name=image.filename,
+                                        image_pillow_obj=face_data.get('faces')[0],
+                                        model=model,
+                                        processor=preprocessor,
+                                        device=device
+                                    )
     
-    faces = []
-    for image_data in image:
-        content = await image_data.read()
-        #extract face
-        face_data = extract_face(image_content=content,
-                                image_name=image_data.filename
-                                )
-
+    #it will get only those images which are match with face only
+    message , similar_images = get_similar_images(event_name=event_name,
+                                                one_face_embeddings=face_embeddings.get('embeddings'),
+                                                qdrant_util=qdrant_util,
+                                                user_id=user_id,
+                                                db_session=db_session,
+                                                threshold=0.845
+                                                )
     
-        try:
-            output =  generate_face_embeddings(image_name=image_data.filename,
-                                                image_pillow_obj=face_data.get('faces')[0],
-                                                model=model,
-                                                processor=preprocessor
-                                            )
-            first_image = output.get('embeddings')
-            faces.append(first_image)
-        # print(first_image)
-        # if len(first_image.shape) == 1:
-            # first_image = first_image.reshape(1, -1)  # Reshape to (1, 1000)
-
-        except Exception as e:
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
-
+    if not similar_images:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(message))
     
-
+    return similar_images
+    
+    
+    
     # img1 = torch.tensor(faces[0]).unsqueeze(0)  # Add a batch dimension
     # img2 = torch.tensor(faces[1]).unsqueeze(0) 
 
-    img1= faces[0]
-    img2 = faces[1]
+   
 
-    print(len(img1))
-    print(img1)
-    def generateScore(image1_embed, image2_embed):
-        img1 = image1_embed
-        img2 = image2_embed
+    # img1= faces[0]
+    # img2 = faces[1]
 
-        cos_scores = util.pytorch_cos_sim(img1, img2)
-        score = round(float(cos_scores[0][0]) * 100, 2)
-        return score
-
-    print(f"similarity Score: {round(generateScore(img1, img2), 2)}")
+    # print(len(img1))
+    # print(img1)
+    
 
     # Calculate the cosine similarity between the embeddings
     # similarity_score = torch.nn.functional.cosine_similarity(img1, img2, dim=1)
@@ -93,31 +98,34 @@ async def get_images_by_face_recog(image:list[UploadFile], user_id:str, event_na
     
     # print(len(imageEncoder(img1)[0]))
 
+
+###########IMP CODE:
+
+
+# import cv2 
+# import numpy as np 
+# import insightface from insightface.app 
+# import FaceAnalysis from insightface.data 
+# import cosine_similarity from sklearn.metrics.pairwise
+
+# app = FaceAnalysis(providers=['CUDAExecutionProvider', 'CPUExecutionProvider']) 
+# app.prepare(ctx_id=0, det_size=(640, 640)) 
+
+# img = cv2.imread('ref_face1.jpg') 
+# ref_face1 = app.get(img)[0]
+# img = cv2.imread('ref_face2.jpg') 
+# ref_face2 = app.get(img)[0]
+# img = cv2.imread('ref_face3.jpg') 
+# ref_face3 = app.get(img)[0]
+
+# out_vec = np.average([ref_face1.normed_embedding, ref_face2.normed_embedding,ref_face3.normed_embedding], axis=0)
+
+# img = cv2.imread('unknown_face1.jpg')
+# unk_face = app.get(img)[0]
+# similarity = cosine_similarity([out_vec],[unk_face2.normed_embedding])
+# print('Similarity:',similarity)
+
     
- 
 
 
-
-        
-    
-    # # if len(face_data.get('faces')) > 1 or len(face_data.get('faces')) < 1:
-    #     raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f'You can only provide an image of one person—no more, no less')
-
-
-    
-    
-    # img1 = faces[0]
-    # img2= faces[1]
-
-
-    # distance = getSimilarity(img1,img2)
-    # print(distance)
-    # if distance < 0.6:
-    #     print("Faces are of the same person.")
-    # else:
-        # print("Faces are of different people.")
-    
-
-
-    # qdrant_util.search_points(collection_name=event_name,
-    #                           one_face_embedding=output.get('embeddings'))
+   

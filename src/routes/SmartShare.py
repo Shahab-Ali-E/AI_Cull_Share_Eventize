@@ -5,6 +5,7 @@ from config.security import validate_images_and_storage
 from model.FolderInS3 import FoldersInS3
 from model.User import User
 from schemas.cullingData import cullingData
+from schemas.imageMetaDataResponse import ImageMetaDataResponse
 from services.Auth.google_auth import get_user
 from sqlalchemy.orm import Session
 from config.settings import get_settings
@@ -15,6 +16,7 @@ from services.SmartShare.imagePreProcessEmbeddings import preprocess_image_befor
 from services.SmartShare.tasks.imageShareTask import image_share_task
 from utils.QdrantUtils import QdrantUtils
 from utils.S3Utils import S3Utils
+from typing import List
 
  
 
@@ -42,19 +44,19 @@ def create_event(event_name:str, request:Request, db_session:Session = Depends(g
 
 
 @router.post('/upload-images/{folder}', status_code=status.HTTP_202_ACCEPTED)
-async def upload_images(request: Request, event_name: str, images: list[UploadFile] = File(...), session: Session = Depends(get_db), user: User = Depends(get_user)):
+async def upload_images(request: Request, event_name: str, images: list[UploadFile] = File(...), db_session: Session = Depends(get_db), user: User = Depends(get_user)):
 
     user_id = request.session.get("user_id")
     event_name = event_name.lower()
 
     # Checking if that folder exists in the database or not
-    folder_data = session.query(FoldersInS3).filter(FoldersInS3.name == event_name, FoldersInS3.module == settings.APP_SMART_SHARE_MODULE).first()
+    folder_data = db_session.query(FoldersInS3).filter(FoldersInS3.name == event_name, FoldersInS3.module == settings.APP_SMART_SHARE_MODULE, FoldersInS3.user_id == user_id).first()
     if not folder_data:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f'Could not find folder with {event_name} in smart share')
 
 
     # Validation if combined size of images is greater than available size and check image validation
-    storage_used = session.query(User.total_culling_storage_used).filter(User.id == user_id).scalar()
+    storage_used = db_session.query(User.total_culling_storage_used).filter(User.id == user_id).scalar()
     is_valid, output = await validate_images_and_storage(
                                                         files=images, 
                                                         max_uploads=20, 
@@ -70,7 +72,7 @@ async def upload_images(request: Request, event_name: str, images: list[UploadFi
         response  = await preprocess_image_before_embedding(event_name=event_name,
                                                             images=images,
                                                             s3_utils=s3_utils,
-                                                            db_session=session,
+                                                            db_session=db_session,
                                                             total_image_size=output,
                                                             user_id=user_id,
                                                             folder_id=folder_data.id
@@ -81,9 +83,16 @@ async def upload_images(request: Request, event_name: str, images: list[UploadFi
     return response
     
 @router.post('/share_images',status_code=status.HTTP_102_PROCESSING)
-async def share_images(culling_data:cullingData, request:Request, ):
+async def share_images(culling_data:cullingData, request:Request, db_session:Session = Depends(get_db)):
 
     user_id = request.session.get("user_id")
+    folder_data = db_session.query(FoldersInS3).filter(FoldersInS3.name == culling_data.folder_name, FoldersInS3.module == settings.APP_SMART_SHARE_MODULE, FoldersInS3.user_id == user_id).first()
+    if not folder_data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f'Could not find folder with \'{culling_data.folder_name}\' in smart share')
+    
+    if len(culling_data.images_url) == 0:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f'image url not provided !')
+
     #Sending images URL and other info to Celery task
     try:
         task = image_share_task.apply_async(args=[user_id, culling_data.images_url, culling_data.folder_name ])
@@ -121,8 +130,8 @@ async def delete_event(event_name:str, request:Request, session:Session =  Depen
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
     
 
-@router.post('/get_images',status_code=status.HTTP_102_PROCESSING)
-async def get_images(event_name:str, request:Request, image: list[UploadFile] = File(...), session:Session =  Depends(get_db)):
+@router.post('/get_images',status_code=status.HTTP_200_OK, response_model=List[ImageMetaDataResponse])
+async def get_images(event_name:str, request:Request, image: UploadFile = File(...), session:Session =  Depends(get_db)):
     user_id = request.session.get('user_id')
 
     return await get_images_by_face_recog(db_session=session,

@@ -1,11 +1,13 @@
 from fastapi import HTTPException, status
 from model.User import User
 from config.settings import get_settings
-
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
+from sqlalchemy.exc import SQLAlchemyError
 settings = get_settings()
 
 
-def update_user_storage_in_db(db_session, total_image_size, user_id, module, operation='increment'):
+async def update_user_storage_in_db(db_session:AsyncSession, total_image_size:int, user_id:str, module:str, increment:bool=True):
     """
     Updates the storage usage for a user in the database based on the operation performed (increment or decrement) 
     and the specified module (culling or smart share).
@@ -14,7 +16,7 @@ def update_user_storage_in_db(db_session, total_image_size, user_id, module, ope
     :param total_image_size: The size of the images to be added or removed from the user's storage.
     :param user_id: The ID of the user whose storage is being updated.
     :param module: The module name, either 'APP_SMART_CULL_MODULE' or 'APP_SMART_SHARE_MODULE'.
-    :param operation: The operation type, either 'increment' (default) to increase the storage or 'decrement' to decrease it.
+    :param operation: The operation type, either 'increment' (default) to increase the storage or False to decrease it.
 
     Returns:
     - A tuple containing a boolean indicating success, and a dictionary with a message or detail.
@@ -22,7 +24,7 @@ def update_user_storage_in_db(db_session, total_image_size, user_id, module, ope
     :Raise: HTTPException: If the user is not found or if there is an error updating the storage in the database.
     """
 
-    user = db_session.query(User).filter(User.id == user_id).first()
+    user = (await db_session.scalars(select(User).where(User.id == user_id))).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     
@@ -31,27 +33,27 @@ def update_user_storage_in_db(db_session, total_image_size, user_id, module, ope
     try:
         #for culling module
         if module == settings.APP_SMART_CULL_MODULE:
-            if operation == 'increment':
+            if increment == True:
                 user.total_culling_storage_used += total_image_size
-            elif operation == 'decrement':
+            elif increment == False:
                 user.total_culling_storage_used -= total_image_size
                 user.total_culling_storage_used = max(user.total_culling_storage_used, 0)#assign zero if got -ve value
 
          #for image share module
         elif module == settings.APP_SMART_SHARE_MODULE:
-            if operation == 'increment':
+            if increment == True:
                 user.total_image_share_storage_used += total_image_size
-            elif operation == 'decrement':
+            elif increment == False:
                 user.total_image_share_storage_used -= total_image_size
                 user.total_image_share_storage_used = max(user.total_image_share_storage_used, 0)
         else:
             return None, {'detail': 'No module with this name'}
         
-        db_session.commit()
-        db_session.refresh(user)
+        await db_session.commit()
+        await db_session.refresh(user)
     
-    except Exception as e:
-        db_session.rollback()
+    except SQLAlchemyError as e:
+        await db_session.rollback()
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Error updating storage usage in database: {str(e)}")
     
     return True, {'message': 'success',

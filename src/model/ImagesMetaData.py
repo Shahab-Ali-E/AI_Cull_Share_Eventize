@@ -1,20 +1,27 @@
-from sqlalchemy import Column, BigInteger, ForeignKey, String, DateTime, func
+from sqlalchemy import ForeignKey, DateTime, func,String
 from sqlalchemy.orm import relationship
 from config.Database import Base
-from model import User
+from sqlalchemy.orm import Mapped, mapped_column
+from typing import TYPE_CHECKING
+from datetime import datetime
+
+if TYPE_CHECKING:
+    from model.User import User
+    from model.FolderInS3 import FoldersInS3
 
 class ImagesMetaData(Base):
     __tablename__ = "imagesmetadata"
-    id = Column(String(400), primary_key=True, nullable=False)
-    name = Column(String(200), nullable=False)
-    file_type = Column(String(10), nullable=False)
-    upload_at = Column(DateTime, server_default=func.now())
-    Bucket_folder = Column(String, nullable=False)
-    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    folder_id = Column(BigInteger, ForeignKey("user_s3_folders.id", ondelete='CASCADE'), nullable=False)
+    id: Mapped[str] = mapped_column(primary_key=True, nullable=False)
+    name: Mapped[str] = mapped_column(nullable=False)
+    file_type: Mapped[str] = mapped_column(nullable=False)
+    upload_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    download_path: Mapped[str] = mapped_column(nullable=False)
+    link_validity: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    folder_id: Mapped[int] = mapped_column(ForeignKey("user_s3_folders.id", ondelete='CASCADE'), nullable=False)
     
     # Relationship back to User
-    owner = relationship("User", back_populates="images")
+    owner: Mapped["User"] = relationship(back_populates="images")
 
     # Relationship to FoldersInS3
-    folder = relationship("FoldersInS3", back_populates="images")
+    folder: Mapped["FoldersInS3"] = relationship(back_populates="images")

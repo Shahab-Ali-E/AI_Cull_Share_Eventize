@@ -64,10 +64,8 @@ class QdrantUtils:
 
     def see_images(self, results, top_k=2):
         for i in range(top_k):
-            # image_id = results[i].payload['image_id']
             name    = results[i].payload['image_name']
             score = results[i].score
-            # image = Image.open(files_list[image_id])
 
             print(f"Result #{i+1}: {name} was diagnosed with {score * 100} confidence")
             print(f"This image score was {score}")
@@ -82,7 +80,7 @@ class QdrantUtils:
             # Calculate the mean along dimension 1
             # query_vector = one_face_embedding.mean()[0].tolist()
             # print(query_vector)
-            passresults = self.qdrant_client.search(
+            result = self.qdrant_client.search(
                 collection_name=collection_name,
                 query_vector=one_face_embedding,
                 limit=1000,
@@ -92,7 +90,7 @@ class QdrantUtils:
                 ),
             )
             
-            self.see_images(results=passresults,top_k=1000)
+            return result
 
         except Exception as e:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Error occurred while searching points: {e}")

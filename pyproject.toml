@@ -10,7 +10,6 @@ packages = [{include = "main", from = "src"}]
 python = "^3.12"
 fastapi = {extras = ["all"], version = "^0.111.1"}
 alembic = "1.13.2"
-psycopg2 = "2.9.9"
 pytest = "8.2.2"
 pillow = "10.4.0"
 opencv-python = "4.10.0.84"
@@ -31,6 +30,7 @@ mtcnn = "^0.1.1"
 clip = {git = "https://github.com/openai/CLIP.git", rev = "main"}
 open-clip-torch = "^2.26.1"
 sentence-transformers = "^3.0.1"
+asyncpg = "^0.29.0"
 
 
 [build-system]

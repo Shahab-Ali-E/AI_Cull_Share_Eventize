@@ -1,7 +1,6 @@
 import os
 import logging
 import warnings
-
 # Suppress TensorFlow warnings
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'  # Suppress all logs (0=all logs, 1=INFO, 2=WARNING, 3=ERROR)
 os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'  # Disable oneDNN optimizations
@@ -26,21 +25,37 @@ transformers_logging.set_verbosity_error()
 
 
 
-from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, Request
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.responses import RedirectResponse
 from config.settings import get_settings
 from routes import OAuth, Culling, SmartShare
-from config.Database import Base, engine
+from config.Database import sessionmanager, Base
 from Celery.utils import create_celery
+from contextlib import asynccontextmanager 
+from dependencies.mlModelsManager import ModelManager
 
-
-Base.metadata.create_all(bind=engine)
 
 settings = get_settings()
+
+
+@asynccontextmanager
+async def lifeSpan(app:FastAPI):
+    print('initalizations of models')
+    # Initialize or load the ML models
+    ModelManager.get_models(settings)
+    print('Test connection to database')
+    async with sessionmanager.connect():
+        pass 
+    yield
+    if sessionmanager._engine is None:
+        # Close the DB connection
+        await sessionmanager.close()
+
+
+
 #init fastapi
-app = FastAPI()
+app = FastAPI(title=settings.APP_NAME, lifespan=lifeSpan)
 
 #init celery
 app.celery_app = create_celery()

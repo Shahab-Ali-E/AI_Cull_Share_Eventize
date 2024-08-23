@@ -1,7 +1,7 @@
 import asyncio
-from fastapi import APIRouter, HTTPException, Response,status,Depends,UploadFile,File,Request
+from fastapi import APIRouter, HTTPException,status,Depends,UploadFile,File,Request
 from fastapi.responses import JSONResponse
-from config.Database import get_db
+from dependencies.core import DBSessionDep
 from config.security import validate_images_and_storage
 from model.User import User
 from model.FolderInS3 import FoldersInS3
@@ -17,7 +17,7 @@ from PIL import Image
 from services.Culling.tasks.cullingTask import culling_task
 from Celery.utils import get_task_info
 from sse_starlette.sse import EventSourceResponse
-
+from sqlalchemy.future import select
 
 router = APIRouter(
     prefix='/culling',
@@ -38,7 +38,7 @@ s3_utils = S3Utils(aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
 
 
 @router.post('/create_directory/{dir_name}', status_code=status.HTTP_201_CREATED)
-def create_directory(dir_name:str, request:Request, user:User = Depends(get_user), session: Session = Depends(get_db)):
+async def create_directory(dir_name:str, request:Request,  db_session: DBSessionDep, user:User = Depends(get_user)):
     """
     Creates a Root Directory in S3 for Image Organization
 
@@ -57,13 +57,15 @@ def create_directory(dir_name:str, request:Request, user:User = Depends(get_user
     ### Example Usage:
     Send a POST request with the desired directory name to organize images within S3.
     """
-        
-    return create_folder_in_S3(dir_name=dir_name.lower(), request=request, s3_utils_obj=s3_utils, db_session=session)
+    user_id = request.session.get('user_id')
+    if not user_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='unauthorized access !')   
+    return await create_folder_in_S3(dir_name=dir_name.lower(), s3_utils_obj=s3_utils, db_session=db_session, user_id=user_id)
 
 
 
 @router.post('/upload-images/{folder}', status_code=status.HTTP_202_ACCEPTED)
-async def upload_images(request: Request, folder: str, images: list[UploadFile] = File(...), session: Session = Depends(get_db), user: User = Depends(get_user)):
+async def upload_images(request: Request, folder: str, db_session: DBSessionDep, images: list[UploadFile] = File(...), user: User = Depends(get_user)):
     """
     Uploads Images to S3 and Initiates Background Culling Task
 
@@ -91,19 +93,24 @@ async def upload_images(request: Request, folder: str, images: list[UploadFile] 
     ### Example Usage:
     Send a POST request with a list of images to upload them to the specified folder and initiate the culling task.
     """
-
+    
     user_id = request.session.get("user_id")
+    if not user_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='unauthorized access !') 
     folder = folder.lower()
 
     # Checking if that folder exists in the database or not
-    folder_data = session.query(FoldersInS3).filter(FoldersInS3.name == folder, FoldersInS3.module == settings.APP_SMART_CULL_MODULE).first()
+    folder_data = (await db_session.scalars(select(FoldersInS3).where(FoldersInS3.name == folder,
+                                                                      FoldersInS3.module == settings.APP_SMART_CULL_MODULE
+                                                                      ))).first()
     print(folder_data)
     if not folder_data:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f'Could not find folder with {folder} in culling module')
 
 
     # Validation if combined size of images is greater than available size and check image validation
-    storage_used = session.query(User.total_culling_storage_used).filter(User.id == user_id).scalar()
+    storage_used =  (await db_session.scalars(select(User.total_culling_storage_used).where(User.id == user_id))).first()
+
     is_valid, output = await validate_images_and_storage(
                                                         files=images, 
                                                         max_uploads=20, 
@@ -116,11 +123,12 @@ async def upload_images(request: Request, folder: str, images: list[UploadFile] 
     
     #uplaoding image to s3, updating meta data in database and return presinged url
     response  = await pre_cull_image_processing(folder=folder,
-                                          images=images,
-                                          s3_utils=s3_utils,
-                                          session=session,
-                                          total_image_size=output,
-                                          user_id=user_id)
+                                                images=images,
+                                                s3_utils=s3_utils,
+                                                db_session=db_session,
+                                                total_image_size=output,
+                                                user_id=user_id
+                                                )
     
     if isinstance(response, dict):  # Ensure response is serializable
         return JSONResponse(content=response)
@@ -133,7 +141,7 @@ async def upload_images(request: Request, folder: str, images: list[UploadFile] 
 
 
 @router.post('/start_culling/', status_code=status.HTTP_102_PROCESSING, response_model=None)
-async def start_culling(request: Request, culling_data: cullingData, session: Session = Depends(get_db), user: User = Depends(get_user)):
+async def start_culling(request: Request, culling_data: cullingData, db_session: DBSessionDep, user: User = Depends(get_user)):
     """
     Initiates the Image Culling Process
 
@@ -159,9 +167,13 @@ async def start_culling(request: Request, culling_data: cullingData, session: Se
     Send a POST request with the folder name and image URLs to start the culling process.
     """
     user_id = request.session.get("user_id")
+    if not user_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='unauthorized access !') 
 
     #get folder data
-    folder_data = session.query(FoldersInS3).filter(FoldersInS3.name==culling_data.folder_name, FoldersInS3.module == settings.APP_SMART_CULL_MODULE, FoldersInS3.user_id == user_id).first()
+    folder_data = (await db_session.scalars(select(FoldersInS3).where(FoldersInS3.name==culling_data.folder_name, 
+                                                                      FoldersInS3.module == settings.APP_SMART_CULL_MODULE, 
+                                                                      FoldersInS3.user_id == user_id))).first()
     if not folder_data:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f'Could not find folder with {culling_data.folder_name} in culling module')
 
@@ -169,7 +181,7 @@ async def start_culling(request: Request, culling_data: cullingData, session: Se
     try:
         task = culling_task.apply_async(args=[user_id, culling_data.images_url, culling_data.folder_name, folder_data.id])
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error sending task to Celery: {str(e)}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Error sending task to Celery: {str(e)}")
 
     return JSONResponse({"task_id": task.id})
 
@@ -217,7 +229,7 @@ async def get_folder_by_name(request:Request,folder: str, user:User = Depends(ge
     pass
 
 @router.delete("/delete-folder/{dir_name}")
-def delete_folder(dir_name:str, request:Request, session:Session = Depends(get_db)):
+async def delete_folder(dir_name:str, request:Request, db_session: DBSessionDep, user:User = Depends(get_user)):
     """
     Deletes a Folder from S3 and Removes its Record from the Database
 
@@ -243,13 +255,15 @@ def delete_folder(dir_name:str, request:Request, session:Session = Depends(get_d
     """
 
     user_id = request.session.get('user_id')
+    if not user_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='unauthorized access !') 
 
     folder_path = f'{user_id}/{dir_name}/'
-
-    return delete_folder_in_s3_and_update_DB(del_folder_path=folder_path,
-                                             db_session=session, 
-                                             s3_obj=s3_utils,
-                                             module=settings.APP_SMART_CULL_MODULE,
-                                             user_id=user_id)
+    return await delete_folder_in_s3_and_update_DB(del_folder_path=folder_path,
+                                                    db_session=db_session, 
+                                                    s3_obj=s3_utils,
+                                                    module=settings.APP_SMART_CULL_MODULE,
+                                                    user_id=user_id
+                                                    )
 
  

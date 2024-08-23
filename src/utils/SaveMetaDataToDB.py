@@ -1,69 +1,109 @@
-from datetime import datetime, timezone
 from model import FolderInS3, ImagesMetaData
 from fastapi import HTTPException
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
 
 
-def save_image_metadata_to_DB(img_id, img_filename, img_content_type, user_id, bucket_folder, session, folder_id):
-    try:
-        save_metadata_to_db = ImagesMetaData.ImagesMetaData(
-            id=img_id,
-            name=img_filename,
-            file_type=img_content_type,
-            upload_at = datetime.now(tz=timezone.utc),
-            Bucket_folder = bucket_folder,
-            user_id=user_id,
-            folder_id=folder_id
-        )
-        session.add(save_metadata_to_db)
-        session.commit()
-        session.refresh(save_metadata_to_db)
-    except SQLAlchemyError as e:
-        session.rollback()
-        raise Exception(f"Error saving image metadata: {str(e)}")
-    
-    return {"status": "success", "data": {save_metadata_to_db}}
-
-
-
-
-def save_or_update_metadata_in_db(session: Session, match_criteria: dict, update_fields: dict=None, task:str='insert'):
+async def save_image_metadata_to_DB(match_criteria: dict, db_session:AsyncSession,  update_fields: dict=None, update=False):
     """
-    Save or update metadata in the database.
+    This function handles saving image metadata to the database. Depending on the `update` flag, 
+    it either updates an existing record or inserts a new record. 
 
-    :param session: SQLAlchemy session for database operations.
-    :param match_criteria: Dictionary specifying the fields to match for an update.
-    :param update_fields: Dictionary specifying the fields to update or insert.
-    :param task: Specify the task you want to perform either update or insert.
-    :return: Dictionary with the status and data or error message.
+    Args:
+        match_criteria (dict): Criteria to match the record to be updated or inserted. 
+                               Should include the primary key or unique constraints to locate the record.
+        session (Session): The SQLAlchemy session used to interact with the database.
+        update_fields (dict, optional): Fields and their new values to update in the existing record. 
+                                         Only relevant if `update` is True.
+        update (bool, optional): Flag indicating whether to update an existing record (True) or 
+                                  insert a new record (False). Defaults to False.
+
+    Raises:
+        HTTPException: If a record to be updated is not found (when `update` is True) or if a database error occurs.
+        
+    Returns:
+        dict: A dictionary containing the status of the operation and the saved record. 
+              For updates, it returns the updated record; for inserts, it returns the newly created record.
     """
     try:
-        if task=='update':
-            # Check if the record already exists
-            existing_record = session.query(FolderInS3.FoldersInS3).filter_by(**match_criteria).first()
+        if update:
+            condtion = [getattr(ImagesMetaData.ImagesMetaData, key) == value for key, value in match_criteria.items()]
+            # Check if the record exists
+            existing_record = (await db_session.scalars(select(ImagesMetaData.ImagesMetaData).where(*condtion))).first()
             if not existing_record:
-                raise HTTPException(status_code=404, detail="no record found")
+                raise Exception("No record found to update.")
+            
+            for key, value in update_fields.items():
+                setattr(existing_record, key, value)
+            
+        else:
+            # Create a new record
+            new_record = ImagesMetaData.ImagesMetaData(**match_criteria)
+            db_session.add(new_record)
+            existing_record = new_record
+        
+        await db_session.commit()
+        # Refresh the record (only if it exists)
+        if existing_record:
+            await db_session.refresh(existing_record)
+        
+    except SQLAlchemyError as e:
+        await db_session.rollback()
+        raise HTTPException(status_code=500, detail=f"Error saving image metadata: {str(e)}")
+    
+    return {"status": "success", "data": existing_record}
+
+
+
+async def save_or_update_metadata_in_db(db_session: AsyncSession, match_criteria: dict, update_fields: dict = None, update=False):
+    """
+    Save or update folder metadata in the database.
+
+    This function handles saving or updating folder metadata in the database. If the `update` flag is set to True,
+    it updates an existing record that matches the `match_criteria`. If the record does not exist, it raises an HTTP 404 error.
+    If `update` is set to False, it inserts a new record into the database with the provided `match_criteria`.
+
+    Args:
+        session (Session): The SQLAlchemy session used to interact with the database.
+        match_criteria (dict): Criteria to match the record to be updated or inserted. Should include the primary key or unique constraints.
+        update_fields (dict, optional): Fields and their new values to update in the existing record. Only relevant if `update` is True.
+        update (bool, optional): Flag indicating whether to update an existing record (True) or insert a new record (False). Defaults to False.
+
+    Raises:
+        HTTPException: 
+            - HTTP 404 error if `update` is True and no record matching `match_criteria` is found.
+            - HTTP 500 error if a database error occurs.
+
+    Returns:
+        dict: A dictionary containing the status of the operation and the saved or updated record. 
+              For updates, it returns the updated record; for inserts, it returns the newly created record.
+    """
+    try:
+        if update:
+            # Build the where clause using SQLAlchemy expressions
+            conditions = [getattr(FolderInS3.FoldersInS3, key) == value for key, value in match_criteria.items()]
+            existing_record = (await db_session.scalars(select(FolderInS3.FoldersInS3).filter(*conditions))).first()
+            if not existing_record:
+                raise HTTPException(status_code=404, detail="No record found")
             
             # Update only the specified fields
             for key, value in update_fields.items():
                 setattr(existing_record, key, value)
-            session.commit()
-            session.refresh(existing_record)
-            
-            # Convert the SQLAlchemy model instance to a dictionary
-            updated_record_dict = {key: getattr(existing_record, key) for key in existing_record.__dict__.keys() if not key.startswith('_')}
-            return {"status": "success", "data": updated_record_dict}
-        
         else:
             # Create a new record
-            new_record_data = {**match_criteria}
-            new_record = FolderInS3.FoldersInS3(**new_record_data)
-            session.add(new_record)
-            session.commit()
-            session.refresh(new_record)
-            return {"status": "success", "data": new_record}
+            new_record = FolderInS3.FoldersInS3(**match_criteria)
+            db_session.add(new_record)
+            existing_record = new_record
+
+        # Commit the transaction
+        await db_session.commit()
+        if existing_record:
+            await db_session.refresh(existing_record)
 
     except SQLAlchemyError as e:
-        session.rollback()
-        raise Exception(f"Error saving or updating metadata: {str(e)}")
+        # Rollback in case of an error
+        await db_session.rollback()
+        raise HTTPException(status_code=500, detail=f"Error saving or updating metadata: {str(e)}")
+    
+    return {"status": "success", "data": existing_record}

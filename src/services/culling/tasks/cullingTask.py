@@ -1,20 +1,14 @@
 import asyncio
-from transformers import ViTForImageClassification, ViTFeatureExtractor
-from sqlalchemy.orm import Session
-from tensorflow.keras.models import load_model  # type: ignore
 from services.Culling.separateBlurImages import separate_blur_images
 from fastapi.responses import JSONResponse
 from config.settings import get_settings
 from services.Culling.separateClosedEye import ClosedEyeDetection
 from utils.CustomExceptions import URLExpiredException
 from utils.S3Utils import S3Utils
-from config.Database import session
-from model.ImagesMetaData import ImagesMetaData
-import cv2
 from Celery.utils import create_celery
 import requests
 from celery import chain
-
+from config.Database import get_db
 
 #-----instances----
 celery = create_celery()
@@ -25,24 +19,13 @@ s3_utils = S3Utils(aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
                     bucket_name=settings.AWS_BUCKET_SMART_CULL_NAME,
                     aws_endpoint_url=settings.AWS_ENDPOINT_URL)
 
-#----MODELS----
-
-# Blur detection loading 
-blur_detect_model = ViTForImageClassification.from_pretrained(settings.BLUR_VIT_MODEL, from_tf=True)
-feature_extractor = ViTFeatureExtractor.from_pretrained(settings.FEATURE_EXTRACTOR)
-
-#closed eye detection loading
-closed_eye_detection_model = load_model(settings.CLOSED_EYE_DETECTION_MODEL)
-face_cascade = cv2.CascadeClassifier(settings.FACE_CASCADE_MODEL)
-
-
 
 
 #---------------------Independenst Task For Culling------------------------------------------------
 
 #This task is used to get images from AWS server from the link which have provided as param to it 
 @celery.task(name='get_images_from_aws', bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={'max_retries':5}, queue='culling')
-def get_images_from_aws(self, uploaded_images_url):
+def get_images_from_aws(self, uploaded_images_url:list):
     images = []
 
     for index, image in enumerate(uploaded_images_url):
@@ -71,52 +54,59 @@ def get_images_from_aws(self, uploaded_images_url):
 
 #This task is used to separate blur images and upload them to aws server and finally return non-blur images
 @celery.task(name='blur_image_separation', bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={'max_retries':3}, queue='culling')
-def blur_image_separation(self, images, user_id, folder, folder_id):
+def blur_image_separation(self, images, user_id:str, folder:str, folder_id:int):
     #database session
-    db_session:Session = session()
-    
-    #perform blur detection on image and separate them
-    output_from_blur =  asyncio.run(separate_blur_images(images=images,
-                                        feature_extractor=feature_extractor,
-                                        blur_detect_model=blur_detect_model, 
-                                        root_folder = user_id,
-                                        inside_root_main_folder = folder,
-                                        folder_id=folder_id,
-                                        S3_util_obj = s3_utils,
-                                        session=db_session,
-                                        task=self
-                                    ))
+    async def async_task():
+        async for db_session in get_db():
+            #perform blur detection on image and separate them
+            output_from_blur = await separate_blur_images(images=images,
+                                                            root_folder = user_id,
+                                                            inside_root_main_folder = folder,
+                                                            folder_id=folder_id,
+                                                            S3_util_obj = s3_utils,
+                                                            db_session=db_session,
+                                                            task=self
+                                                        )
+            self.update_state(state='PROGRESS', meta={'progress': 100, 'info': "Blur images separation completed !"})
+            return output_from_blur
 
-    return output_from_blur
+    return asyncio.run(async_task())
 
 
 
 #This task is used to separate closed eye images and upload them to aws server and finally return non-closed-eye images
 @celery.task(name='closed_eye_separation', bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={'max_retries': 3}, queue='culling')
-def closed_eye_separation(self, output_from_blur, user_id, folder, folder_id):
+def closed_eye_separation(self, output_from_blur, user_id:str, folder:str, folder_id:int):
     if output_from_blur[1] is None or "No images were uploaded" in output_from_blur[1]:
         return {"status": "error", "detail": "error occurred in blur detection"}
     
-    db_session: Session = session()
-    
-    closed_eye_detect_obj = ClosedEyeDetection(
-        closed_eye_detection_model=closed_eye_detection_model,
-        face_cascade=face_cascade,
-        S3_util_obj=s3_utils,
-        root_folder=user_id,
-        inside_root_main_folder=folder,
-        session=db_session,
-    )
+    async def async_task():
+        # Create an async session
+        async for db_session in get_db():
+            closed_eye_detect_obj = ClosedEyeDetection(
+                S3_util_obj=s3_utils,
+                root_folder=user_id,
+                inside_root_main_folder=folder,
+                db_session=db_session,
+            )
+            
+            result = await closed_eye_detect_obj.separate_closed_eye_images_and_upload_to_s3(
+                images=output_from_blur[0], 
+                task=self, 
+                folder_id=folder_id
+            )
+            
+            self.update_state(state='PROGRESS', meta={'progress': 100, 'info': "Closed eye images separation completed!"})
+            return result
 
-    result = asyncio.run(closed_eye_detect_obj.separate_closed_eye_images_and_upload_to_s3(images=output_from_blur[0], task=self, folder_id=folder_id))
-
-    return result
+    # Run the async function in a synchronous context
+    return asyncio.run(async_task())
 
 
 #-----------------------Chaining All Above Task Here----------------------------------
 
 @celery.task(name='culling_task', bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={'max_retries':5}, queue='culling')
-def culling_task(self, user_id, uploaded_images_url, folder, folder_id):
+def culling_task(self, user_id:str, uploaded_images_url, folder:str, folder_id:int):
 
     self.update_state(state='STARTED', meta={'status': 'Task started'})
 

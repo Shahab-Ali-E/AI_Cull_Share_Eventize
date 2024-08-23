@@ -1,10 +1,12 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta
 from PIL import Image
 import io
 import torch
 from uuid import uuid4
 from utils.SaveMetaDataToDB import save_image_metadata_to_DB
 from config.settings import get_settings
+from dependencies.mlModelsManager import ModelManager
+from sqlalchemy.ext.asyncio import AsyncSession
 
 settings = get_settings()
 
@@ -12,7 +14,13 @@ settings = get_settings()
 predicted_labels = ['undistorted', 'blurred']
 upload_image_folder = settings.BLUR_FOLDER
 
-async def separate_blur_images(images, feature_extractor, blur_detect_model, root_folder, inside_root_main_folder, folder_id, S3_util_obj, session, task):
+#models
+models = ModelManager.get_models(settings)
+feature_extractor = models['feature_extractor']
+blur_detect_model = models['blur_detect_model']
+
+
+async def separate_blur_images(images:list, root_folder:str, inside_root_main_folder:str, folder_id:int, S3_util_obj, db_session:AsyncSession, task):
     results = []
     response = None
     total_img_len = len(images)
@@ -48,25 +56,34 @@ async def separate_blur_images(images, feature_extractor, blur_detect_model, roo
             open_images.save(byte_arr, format=format)
             byte_arr.seek(0)
             try:
-                response = S3_util_obj.upload_image(root_folder=root_folder, 
-                                                    main_folder=inside_root_main_folder, 
-                                                    upload_image_folder=upload_image_folder, 
-                                                    image_data=byte_arr,
-                                                    filename=filename)
+                response = await S3_util_obj.upload_smart_cull_images(root_folder=root_folder, 
+                                                                        main_folder=inside_root_main_folder, 
+                                                                        upload_image_folder=upload_image_folder, 
+                                                                        image_data=byte_arr,
+                                                                        filename=filename
+                                                                    )
             except Exception as e:
                 raise Exception(f"Error uploading image to S3: {str(e)}")
+            
+            #generating presinged url so user can download image
+            key = f"{root_folder}/{inside_root_main_folder}/{upload_image_folder}/{filename}"
+            presigned_url = await S3_util_obj.generate_presigned_url(key, expiration=settings.PRESIGNED_URL_EXPIRY_SEC)
 
-            Bucket_Folder = f'{root_folder}/{inside_root_main_folder}/{upload_image_folder}'
+            image_metadata = {
+                'id': filename,
+                'name': image['name'],
+                'download_path': presigned_url,
+                'file_type': image['content_type'],
+                'link_validity':datetime.now() + timedelta(seconds=settings.PRESIGNED_URL_EXPIRY_SEC),
+                'user_id': root_folder,
+                'folder_id': folder_id
+            }
+
             # Saving the blur images into Database
-            save_image_metadata_to_DB(
-                                        img_id=filename,
-                                        img_filename=image['name'],
-                                        img_content_type=image['content_type'],
-                                        user_id=root_folder,
-                                        bucket_folder=Bucket_Folder,
-                                        session=session,
-                                        folder_id=folder_id
-                                    )
+            await save_image_metadata_to_DB(
+                                            db_session=db_session,
+                                            match_criteria=image_metadata 
+                                            )
         else:
             results.append(image)
 
@@ -74,7 +91,5 @@ async def separate_blur_images(images, feature_extractor, blur_detect_model, roo
         if task:
             progress = ((index + 1) / total_img_len) * 100
             task.update_state(state='PROGRESS', meta={'progress': progress, 'info': 'Blur image separation processing'})
-
-        task.update_state(state='PROGRESS', meta={'progress': 100, 'info': "Blur images separation completed !"})
 
     return results, response or "No blur images were found"

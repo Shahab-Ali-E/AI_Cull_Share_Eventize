@@ -1,12 +1,15 @@
 import torch
+from config.settings import get_settings
+from dependencies.mlModelsManager import ModelManager
 
+settings = get_settings()
+models = ModelManager.get_models(settings)
+embedding_img_processor = models["embedding_img_processor"]
+embedding_model = models["embedding_model"]
 
-import torch
-
-def generate_face_embeddings(image_name: str, image_pillow_obj, processor, model):
+def generate_face_embeddings(image_name: str, image_pillow_obj):
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     try:
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
         # #Ensure the face image is resized to the expected input size of the model
         # resized_face = image_pillow_obj.resize((224, 224))
 
@@ -20,12 +23,12 @@ def generate_face_embeddings(image_name: str, image_pillow_obj, processor, model
         # with torch.no_grad():  # Disable gradient calculation
         #     outputs = model.encode_image(inputs)
 
-        image = processor(image_pillow_obj, return_tensors="pt")
+        image = embedding_img_processor(image_pillow_obj, return_tensors="pt")
 
         pixel_values = image['pixel_values'].to(device)
 
         with torch.no_grad():
-            outputs = model.get_image_features(pixel_values)
+            outputs = embedding_model.get_image_features(pixel_values)
 
         embeddings = outputs[0]  # Extract embeddings
 

@@ -1,9 +1,7 @@
 from fastapi import APIRouter, Request, status, Depends, HTTPException
-from starlette.responses import RedirectResponse,JSONResponse
-from sqlalchemy.orm import Session
-from config.Database import get_db
-from model.User import User
-from schemas.user import userResponse
+from starlette.responses import RedirectResponse
+from dependencies.core import DBSessionDep
+from schemas.user import UserResponse
 from services.Auth.google_auth import get_user, google_auth, google_login
 import logging
 
@@ -30,8 +28,8 @@ async def login(request: Request):
 
 # Google auth sign with google
 @router.get('/google-auth')
-async def auth(request: Request, session: Session = Depends(get_db)):
-    return await google_auth(request, session=session)
+async def auth(request: Request, db_session:DBSessionDep):
+    return await google_auth(request, db_session=db_session)
 
 # Logout here
 @router.get('/logout')
@@ -49,11 +47,9 @@ async def logout(request: Request):
     return response
 
 # Welcome route after login
-@welcome_route.get('/welcome', response_model=userResponse)
-async def welcome(User: User = Depends(get_user)):
-    print("#########################")
-    print(User)
-    if not User:
+@welcome_route.get('/welcome', response_model=UserResponse)
+async def welcome(user: UserResponse = Depends(get_user)):
+    if not user:
         return RedirectResponse(url='/Auth/login')
+    return user
 
-    return User

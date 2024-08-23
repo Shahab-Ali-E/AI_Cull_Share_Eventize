@@ -29,3 +29,5 @@
 
 `here are the vgg face weights are stored`
 `C:\Users\Shahab Ali\.deepface\weights\vgg_face_weights.h5`
+
+

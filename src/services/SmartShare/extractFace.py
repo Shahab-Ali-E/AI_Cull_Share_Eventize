@@ -1,13 +1,12 @@
 import numpy as np
 import cv2
 from PIL import Image
-from mtcnn import MTCNN
-import torch
+from dependencies.mlModelsManager import ModelManager
+from config.settings import get_settings
 
-
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-print(device)
-detector = MTCNN()
+settings = get_settings()
+models = ModelManager.get_models(settings)
+face_detector = models["face_detector"]
 
 def extract_face(image_content, image_name:str):
     try:
@@ -23,7 +22,7 @@ def extract_face(image_content, image_name:str):
         image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
         # Detect faces in the image
-        detections = detector.detect_faces(image_rgb)
+        detections = face_detector.detect_faces(image_rgb)
 
         # Iterate through detected faces and save them
         face_images = []

@@ -1,6 +1,8 @@
 import boto3
 from botocore.exceptions import ClientError
-from fastapi import HTTPException
+from fastapi import HTTPException,status
+from concurrent.futures import ThreadPoolExecutor
+import asyncio
 
 class S3Utils:
     """
@@ -13,7 +15,6 @@ class S3Utils:
         bucket_name (str): The name of the S3 bucket.
     """
     def __init__(self, aws_region, aws_access_key_id, aws_secret_access_key, bucket_name, aws_endpoint_url):
-        self.bucket_name = bucket_name
         self.client = boto3.client(
             service_name="s3",
             endpoint_url=aws_endpoint_url,
@@ -21,9 +22,11 @@ class S3Utils:
             aws_access_key_id=aws_access_key_id,
             aws_secret_access_key=aws_secret_access_key
         )
+        self.bucket_name = bucket_name
+        self.executor = ThreadPoolExecutor()
     
     #It check if that folder already exsists which you want to create
-    def folder_exists(self, folder_key):
+    async def folder_exists(self, folder_key):
         """
         Checks if a folder exists in the specified S3 bucket.
         Args:
@@ -34,25 +37,45 @@ class S3Utils:
             HTTPException: If there is an error checking the folder existence.
         """
         try:
-            response = self.client.list_objects_v2(Bucket=self.bucket_name, Prefix=folder_key, Delimiter='/')
-            if 'Contents' in response:
+            loop = asyncio.get_running_loop()
+            response = await loop.run_in_executor(
+                self.executor,
+                lambda:self.client.list_objects_v2(
+                    Bucket=self.bucket_name, 
+                    Prefix=folder_key, 
+                    Delimiter='/'
+                )
+            )
+
+            # Check if the folder exists in either Contents or CommonPrefixes
+            if response.get('Contents'):
                 return True
+            if response.get('CommonPrefixes'):
+                return True
+            
             return False
         except ClientError as e:
             raise HTTPException(f"Unable to check folder existence: {e}")
     
     #It create an object like folder/uplaod images etc in the bucket
-    def create_object(self, folder_key):
+    async def create_object(self, folder_key):
         """
         Creates an object (folder or file) in the specified S3 bucket.
 
         Args:
             folder_key (str): The S3 key of the folder or object to create.
         """
-        self.client.put_object(Bucket=self.bucket_name, Key=folder_key)
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(
+            self.executor,
+            lambda:self.client.put_object(
+                Bucket=self.bucket_name, 
+                Key=folder_key
+            )   
+        )
 
     #It will delete an Object from S3
-    def delete_object(self, folder_key):
+    async def delete_object(self, folder_key):
         """
         Deletes an object or folder and its contents from the S3 bucket.
         Args:
@@ -64,14 +87,27 @@ class S3Utils:
         """
         try:
             # List all objects under the specified prefix (folder)
-            objects_to_delete = self.client.list_objects_v2(Bucket=self.bucket_name, Prefix=folder_key)
+            loop = asyncio.get_running_loop()
+            objects_to_delete = await loop.run_in_executor(
+                self.executor,
+                lambda:self.client.list_objects_v2(
+                    Bucket=self.bucket_name, 
+                    Prefix=folder_key,
+                ) 
+            )
 
             # Check if there are objects to delete
             if 'Contents' in objects_to_delete:
                 delete_keys = [{'Key':obj['Key']} for obj in objects_to_delete['Contents']]
                 
-                # Delete all objects
-                return self.client.delete_objects(Bucket=self.bucket_name, Delete={'Objects': delete_keys})
+                # Delete all objects and return
+                return await loop.run_in_executor(
+                    self.executor,
+                    lambda:self.client.delete_objects(
+                        Bucket=self.bucket_name,
+                        Delete={'Objects': delete_keys}#to delete
+                    )
+                )
             else:
                 return {"message":"No objects found to delete in S3"}
 
@@ -80,7 +116,7 @@ class S3Utils:
         
         
     #It is use to create folder when all images are ready to cull and user starts culling
-    def create_folders_for_culling(self, root_folder, main_folder, images_before_cull_folder, blur_img_folder, closed_eye_img_folder, duplicate_img_folder, fine_collection_img_folder):
+    async def create_folders_for_culling(self, root_folder, main_folder, images_before_cull_folder, blur_img_folder, closed_eye_img_folder, duplicate_img_folder, fine_collection_img_folder):
         """
         Creates a set of folders in S3 for image culling.
 
@@ -99,30 +135,21 @@ class S3Utils:
         root_folder = f'{root_folder}/'
         main_folder = f'{root_folder}{main_folder}/'
         
-        if not self.folder_exists(root_folder):
+        if not await self.folder_exists(root_folder):
             self.create_object(root_folder)
         
-        if self.folder_exists(main_folder):
+        if await self.folder_exists(main_folder):
             raise Exception(f'Main folder "{main_folder}" already exists.')
         else:
-            self.create_object(main_folder)
-
-        images_before_culling_start = f'{main_folder}{images_before_cull_folder}/'
-        blur_folder = f'{main_folder}{blur_img_folder}/'
-        closed_eye_folder = f'{main_folder}{closed_eye_img_folder}/'
-        duplicate_folder = f'{main_folder}{duplicate_img_folder}/'
-        fine_collection_folder = f'{main_folder}{fine_collection_img_folder}/'
+            await self.create_object(main_folder)
 
         #creating folder here
-        self.create_object(images_before_culling_start)
-        self.create_object(blur_folder)
-        self.create_object(closed_eye_folder)
-        self.create_object(duplicate_folder)
-        self.create_object(fine_collection_folder)
+        for folder in [images_before_cull_folder, blur_img_folder, closed_eye_img_folder, duplicate_img_folder, fine_collection_img_folder]:
+            await self.create_object(f'{main_folder}{folder}/')
     
 
     #It is use to create event folder for smart share where user uploads images
-    def create_folders_for_smart_share(self, root_folder, event_name):
+    async def create_folders_for_smart_share(self, root_folder, event_name):
         """
         Creates a folder structure for event-based image sharing in S3.
 
@@ -136,17 +163,17 @@ class S3Utils:
         root_folder = f'{root_folder}/'
         event_name = f'{root_folder}{event_name}/'
 
-        if not self.folder_exists(root_folder):
+        if not await self.folder_exists(root_folder):
             self.create_object(root_folder)
         
-        if self.folder_exists(event_name):
+        if await self.folder_exists(event_name):
             raise HTTPException(f'Event with name "{event_name}" already exists.')
         else:
-            self.create_object(event_name)
+            await self.create_object(event_name)
         
         
     #This will upload the prdicted images to right folder like blur goes in blur_image_folder and vice versa
-    def upload_image(self, root_folder, main_folder, upload_image_folder, image_data, filename):
+    async def upload_smart_cull_images(self, root_folder, main_folder, upload_image_folder, image_data, filename):
         """
         Uploads an image to a specific folder in S3.
 
@@ -167,21 +194,25 @@ class S3Utils:
         main_folder = f'{root_folder}{main_folder}/'
         upload_image_folder = f'{main_folder}{upload_image_folder}/'
 
-        if not self.folder_exists(root_folder):
-            raise HTTPException(f'Root folder "{root_folder}" does not exist.')
+        for folder in [root_folder, main_folder, upload_image_folder]:
+            if not await self.folder_exists(folder_key=folder):
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f'{folder} does not exist.')
         
-        if not self.folder_exists(main_folder):
-            raise HTTPException(f'Main folder "{main_folder}" does not exist.')
-        
-        if not self.folder_exists(upload_image_folder):
-            raise HTTPException(f'Upload folder "{upload_image_folder}" does not exist.')
-
-        self.client.upload_fileobj(image_data, self.bucket_name, f'{upload_image_folder}{filename}')
+        # Run the upload_fileobj method in a separate thread
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(
+            self.executor,
+            lambda:self.client.upload_fileobj(
+                image_data,
+                self.bucket_name,
+                f'{upload_image_folder}{filename}'
+            )
+        )
 
         return {"image uploaded successfully"}
     
         #This will upload the prdicted images to right folder like blur goes in blur_image_folder and vice versa
-    def upload_smart_share_images(self, root_folder, event_folder, image_data, filename):
+    async def upload_smart_share_images(self, root_folder, event_folder, image_data, filename):
         """
         Uploads an image to a specific folder in S3.
 
@@ -200,19 +231,26 @@ class S3Utils:
         root_folder = f'{root_folder}/'
         event_folder = f'{root_folder}{event_folder}/'
 
-        if not self.folder_exists(root_folder):
+        if not await self.folder_exists(root_folder):
             raise HTTPException(f'Root folder "{root_folder}" does not exist.')
         
-        if not self.folder_exists(event_folder):
+        if not await self.folder_exists(event_folder):
             raise HTTPException(f'Event with name "{event_folder}" does not exist.')
 
-        self.client.upload_fileobj(image_data, self.bucket_name, f'{event_folder}{filename}')
-
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(
+            self.executor,
+            lambda:self.client.upload_fileobj(
+                image_data,
+                self.bucket_name,
+                f'{event_folder}{filename}'
+            )
+        )
         return {"image uploaded successfully"}
     
 
 
-    def get_image_from_s3_before_cull(self, root_folder, main_folder, images_before_cull_folder ,image_key):
+    async def get_image_from_s3_before_cull(self, root_folder, main_folder, images_before_cull_folder ,image_key):
         """
         Retrieves an image from S3 before culling.
 
@@ -234,18 +272,22 @@ class S3Utils:
         images_before_cull_folder = f'{main_folder}{images_before_cull_folder}/'
         image_key = f'{images_before_cull_folder}/{image_key}'
 
-        if not self.folder_exists(self.bucket_name, root_folder):
-            raise Exception(f'Root folder "{root_folder}" does not exist.')
+        for folder in [root_folder, main_folder, images_before_cull_folder]:
+            if not await self.folder_exists(folder):
+                raise HTTPException(status_code=400, detail=f'{folder} does not exist.')
         
-        if not self.folder_exists(self.bucket_name, main_folder):
-            raise Exception(f'Main folder "{main_folder}" does not exist.')
-        
-        if not self.folder_exists(self.bucket_name, images_before_cull_folder):
-            raise Exception(f'Upload folder "{images_before_cull_folder}" does not exist.')
-        
+        loop = asyncio.get_running_loop()
         #get image from s3
         try:
-            image_data =  self.client.get_object(Bucket=self.bucket_name, key=image_key)['Body'].read()
+            # Run the synchronous S3 get_object call in the executor
+            response = await loop.run_in_executor(
+                self.executor,
+                lambda:self.client.get_object(
+                    Bucket=self.bucket_name,
+                    Key=image_key
+                )
+            )
+            image_data = response['Body'].read()
         except self.client.exceptions.NoSuchKey:
             raise HTTPException(status_code=404, detail="Image not found")
         except Exception as e:
@@ -255,7 +297,7 @@ class S3Utils:
     
 
     #it will generate a specific url which is valid for 30 min by default from which you can download image
-    def generate_presigned_url(self, key, expiration=1800):
+    async def generate_presigned_url(self, key, expiration=3600):
         """
         Generates a presigned URL for securely accessing an image in S3.
         Args:
@@ -266,11 +308,16 @@ class S3Utils:
         Raises:
             Exception: If there is an error generating the presigned URL.
         """
+
+        loop = asyncio.get_running_loop()
         try:
-            url = self.client.generate_presigned_url(
-                ClientMethod='get_object',
-                Params={'Bucket': self.bucket_name, 'Key': key},
-                ExpiresIn=expiration
+            url = await loop.run_in_executor(
+                self.executor,
+                lambda:self.client.generate_presigned_url(
+                    'get_object',
+                    Params={'Bucket': self.bucket_name, 'Key': key},
+                    ExpiresIn=expiration
+                )
             )
             return url
         except ClientError as e:

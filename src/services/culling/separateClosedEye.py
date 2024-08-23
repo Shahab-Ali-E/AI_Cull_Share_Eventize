@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta
 import io
 import cv2
 import numpy as np
@@ -6,17 +7,22 @@ from uuid import uuid4
 from PIL import Image
 from utils.SaveMetaDataToDB import save_image_metadata_to_DB
 from config.settings import get_settings
+from dependencies.mlModelsManager import ModelManager
+from sqlalchemy.ext.asyncio import AsyncSession
 
 settings = get_settings()
 
+#models
+models = ModelManager.get_models(settings)
+
 class ClosedEyeDetection:
 
-    def __init__(self, face_cascade, closed_eye_detection_model, S3_util_obj, root_folder, inside_root_main_folder, session):
-        self.face_cascade = face_cascade
-        self.model = closed_eye_detection_model
+    def __init__(self, S3_util_obj, root_folder:str, inside_root_main_folder:str, db_session:AsyncSession):
+        self.face_detector = models['face_detector']
+        self.model = models['closed_eye_detection_model']
         self.S3 = S3_util_obj
         self.root_folder = root_folder
-        self.session = session
+        self.db_session = db_session
         self.inside_root_main_folder = inside_root_main_folder
         self.upload_image_folder = settings.CLOSED_EYE_FOLDER
 
@@ -35,14 +41,15 @@ class ClosedEyeDetection:
                 raise ValueError("Failed to decode image from numpy array")
       
             # Convert the image to grayscale for face detection
-            image_grey = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+            image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
             # Detect faces in the grayscale image
-            faces = self.face_cascade.detectMultiScale(image_grey, scaleFactor=1.16, minNeighbors=5, minSize=(25, 25), flags=0)
+            faces = self.face_detector.detect_faces(image_rgb)
             # List to store extracted faces data
             extracted_faces = []
             # Iterate through detected faces and save them
-            for x, y, w, h in faces:
-                extracted_faces.append((x, y, w, h))
+            for detection in faces:
+                x, y, width, height = detection['box']
+                extracted_faces.append((x, y, width, height))
         except Exception as e:
             raise Exception(f"Error detecting faces: {str(e)}")
         
@@ -69,8 +76,8 @@ class ClosedEyeDetection:
         extracted_faces, image = await self.detect_faces(image_data)
         predictions = []
 
-        for (x, y, w, h) in extracted_faces:
-            face_image = image[y:y+h, x:x+w]
+        for (x, y, width, height) in extracted_faces:
+            face_image = image[y:y+height, x:x+width]
             preprocessed_face = await self.preprocess_face_image(face_image)
             eye_state = await self.predict_eye_state(preprocessed_face)
             predictions.append(eye_state)
@@ -99,29 +106,34 @@ class ClosedEyeDetection:
                     byte_arr.seek(0)
                     
                     try:
-                        response = self.S3.upload_image(
-                            root_folder=self.root_folder,
-                            main_folder=self.inside_root_main_folder,
-                            upload_image_folder=self.upload_image_folder,
-                            image_data=byte_arr,
-                            filename=filename
-                        )
+                        response = await self.S3.upload_smart_cull_images(
+                                                                root_folder=self.root_folder,
+                                                                main_folder=self.inside_root_main_folder,
+                                                                upload_image_folder=self.upload_image_folder,
+                                                                image_data=byte_arr,
+                                                                filename=filename
+                                                            )
                     except Exception as e:
                         raise Exception(f"Error uploading image to S3: {str(e)}")
                     
-                    
-                    Bucket_Folder = f'{self.root_folder}/{self.inside_root_main_folder}/{self.upload_image_folder}'
-                    
+                    #generating presinged url so user can download image
+                    key = f"{self.root_folder}/{self.inside_root_main_folder}/{self.upload_image_folder}/{filename}"
+                    presigned_url = await self.S3.generate_presigned_url(key, expiration=settings.PRESIGNED_URL_EXPIRY_SEC)
+
+                    image_metadata = {
+                        'id': filename,
+                        'name': img_name,
+                        'download_path': presigned_url,
+                        'file_type': image['content_type'],
+                        'link_validity':datetime.now() + timedelta(seconds=settings.PRESIGNED_URL_EXPIRY_SEC),
+                        'user_id': self.root_folder,
+                        'folder_id': folder_id
+                    }
                     # Saving the closed eye images into Database
-                    save_image_metadata_to_DB(
-                                                img_id=filename,
-                                                img_filename=img_name,
-                                                img_content_type=image['content_type'],
-                                                user_id=self.root_folder,
-                                                bucket_folder=Bucket_Folder,
-                                                session=self.session,
-                                                folder_id=folder_id
-                                            )
+                    await save_image_metadata_to_DB(
+                                                    db_session=self.db_session,
+                                                    match_criteria=image_metadata
+                                                )
                     
                 else:
                     open_eyes_images.append(image)  # Append the image if eyes are open
@@ -130,8 +142,6 @@ class ClosedEyeDetection:
             if task:
                 progress = ((index + 1) / total_img_len) * 100
             task.update_state(state='PROGRESS', meta={'progress': progress, 'info': 'Closed eye image separation processing'})
-        
-        task.update_state(state='PROGRESS', meta={'progress': 100, 'info': "Closed eye images separation completed !"})
         
         return open_eyes_images, response or "No closed eye image were found"
 

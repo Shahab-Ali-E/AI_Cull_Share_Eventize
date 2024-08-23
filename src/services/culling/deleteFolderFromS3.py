@@ -1,10 +1,11 @@
 from fastapi import HTTPException, status
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 from model.FolderInS3 import FoldersInS3
 from utils.UpdateUserStorage import update_user_storage_in_db
+from sqlalchemy.future import select
 
 
-def delete_folder_in_s3_and_update_DB(del_folder_path: str, db_session: Session, s3_obj, module: str, user_id: str):
+async def delete_folder_in_s3_and_update_DB(del_folder_path: str, db_session: AsyncSession, s3_obj, module: str, user_id: str):
     """
     Deletes a folder from AWS S3 and updates the corresponding record in the database.
     The function performs the following steps:
@@ -32,11 +33,11 @@ def delete_folder_in_s3_and_update_DB(del_folder_path: str, db_session: Session,
     folder_name = del_folder_path.split('/')[-2]
 
     # Retrieve folder metadata from the database
-    folder_data = db_session.query(FoldersInS3).filter(
-        FoldersInS3.name == folder_name,
-        FoldersInS3.module == module,
-        FoldersInS3.user_id == user_id
-    ).first()
+    folder_data = (await db_session.scalars(select(FoldersInS3).where(FoldersInS3.name == folder_name,
+                                                                      FoldersInS3.module == module,
+                                                                      FoldersInS3.user_id == user_id))).first()
+    
+    print(folder_data)
 
     # Raise an error if the folder is not found in the database
     if not folder_data:
@@ -49,7 +50,7 @@ def delete_folder_in_s3_and_update_DB(del_folder_path: str, db_session: Session,
 
     # Attempt to delete the folder from S3
     try:
-        s3_response = s3_obj.delete_object(folder_key=del_folder_path)
+        s3_response = await s3_obj.delete_object(folder_key=del_folder_path)
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -58,23 +59,24 @@ def delete_folder_in_s3_and_update_DB(del_folder_path: str, db_session: Session,
 
     # If the deletion was successful, delete the record from the database
     if s3_response.get('ResponseMetadata', {}).get('HTTPStatusCode') == 200:
+        print('executing if')
         try:
-            db_session.delete(folder_data)
-            db_session.commit()
+            await db_session.delete(folder_data)
+            await db_session.commit()
         except Exception as e:
-            db_session.rollback()
+            await db_session.rollback()
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Error deleting folder record from database: {str(e)}"
             )
 
         # Decrease the user's storage usage in the database
-        db_response = update_user_storage_in_db(
+        db_response = await update_user_storage_in_db(
             module=module,
             db_session=db_session,
-            operation='decrement',
             total_image_size=total_folder_size,
-            user_id=user_id
+            user_id=user_id,
+            increment=False
         )
 
         return s3_response, db_response

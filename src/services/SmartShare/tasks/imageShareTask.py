@@ -1,12 +1,7 @@
 from fastapi.responses import JSONResponse
 from config.settings import get_settings
-import cv2
-import torch
-import numpy as np
-from transformers import AutoImageProcessor, ResNetForImageClassification 
 from Celery.utils import create_celery
 from celery import chain
-from PIL import Image
 from services.Culling.tasks.cullingTask import get_images_from_aws
 from services.SmartShare.extractFace import extract_face
 from services.SmartShare.generateEmeddings import generate_face_embeddings
@@ -18,11 +13,10 @@ settings = get_settings()
 celery = create_celery()
 qdrant_util = QdrantUtils()
 
-#---Model---
-face_extractor = cv2.CascadeClassifier(settings.FACE_CASCADE_MODEL)
+# #---Model---
+# face_extractor = cv2.CascadeClassifier(settings.FACE_CASCADE_MODEL)
 
 #---------------------Independent Tasks For Image Share------------------------------------------------
-
 @celery.task(name='extract_faces', bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={'max_retries': 5}, queue='smart_sharing')
 def extract_faces(self, images):
     extracted_faces = []
@@ -31,24 +25,17 @@ def extract_faces(self, images):
         image_data = image['content']
         image_name = image['name']
 
-        faces = extract_face(face_extractor_model=face_extractor,
-                     image_content=image_data,
-                     image_name=image_name)
+        faces = extract_face(image_content=image_data,
+                            image_name=image_name
+                            )
         
-        extract_faces.append(faces)
+        extracted_faces.append(faces)
 
     return extracted_faces
 
 
 @celery.task(name='generate_embeddings', bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={'max_retries': 5}, queue='smart_sharing')
-def generate_embeddings(self, faces_data):
-
-    # Initialize processor and model for embeddings
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(device)
-    processor = AutoImageProcessor.from_pretrained(settings.FACE_EMBEDDING_GENERATOR_MODEL)
-    model = ResNetForImageClassification.from_pretrained(settings.FACE_EMBEDDING_GENERATOR_MODEL).to(device)
-
+def generate_embeddings(self, faces_data:list):
     all_results=[]
 
     for face_data in faces_data:
@@ -63,8 +50,6 @@ def generate_embeddings(self, faces_data):
             embeddings = generate_face_embeddings(
                 image_name=image_name,
                 image_pillow_obj=pil_obj,
-                model=model,
-                processor=processor
             )
             
             all_results.append(embeddings)
