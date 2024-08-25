@@ -1,6 +1,6 @@
 from config.settings import get_settings
 from fastapi import HTTPException,status
-from utils.SaveMetaDataToDB import save_or_update_metadata_in_db
+from utils.SaveMetaDataToDB import upsert_folder_metadata_DB
 from model.FolderInS3 import FoldersInS3
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
@@ -20,7 +20,7 @@ async def create_folder_in_S3(dir_name:str, s3_utils_obj, db_session:AsyncSessio
             raise HTTPException(status_code=status.HTTP_406_NOT_ACCEPTABLE, detail=f'folder with name {dir_name} already exsits')
         
     except Exception as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f'llll{str(e)}')
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f'{str(e)}')
     
     #creating folder in S3
     try:
@@ -39,9 +39,16 @@ async def create_folder_in_S3(dir_name:str, s3_utils_obj, db_session:AsyncSessio
     folder_loc_in_s3 = f'{settings.AWS_BUCKET_SMART_CULL_NAME}/{user_id}/{dir_name}'
     match_criteria = {"name": dir_name, "user_id": user_id, "module":settings.APP_SMART_CULL_MODULE, 'location_in_s3':folder_loc_in_s3}
     try:
-        await save_or_update_metadata_in_db(db_session=db_session,
-                                            match_criteria=match_criteria
+        await upsert_folder_metadata_DB(db_session=db_session,
+                                        match_criteria=match_criteria
                                         )
     except Exception as e:
+        try:
+            await s3_utils_obj.delete_object(folder_key=f'{user_id}/{dir_name}')
+        except Exception as rollback_exception:
+            # Log the rollback failure and raise an error with details
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
+                                detail=f"Failed to save metadata in DB and rollback S3 operation failed: {str(rollback_exception)}. "
+                                       f"Original error: {str(e)}")
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f'343434{str(e)}')
 

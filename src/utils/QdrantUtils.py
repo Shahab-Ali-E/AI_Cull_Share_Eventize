@@ -12,19 +12,9 @@ class QdrantUtils:
             url = settings.QDRANT_ENDPOINT_URL,
             api_key = settings.QDRANT_API_KEY,
         )
-
-    #Put data or embedding into collection
-    def upload_image_embeddings(self, collection_name:str, embedding_size:int, vector_data:list):
-        # Create collection
-        try:
-           if not self.qdrant_client.collection_exists(collection_name):
-                self.qdrant_client.create_collection(
-                    collection_name=collection_name,
-                    vectors_config=VectorParams(size=embedding_size, distance=Distance.COSINE),
-                )
-        except Exception as e:
-            return {"error": str(e)}
         
+    #Put data or embedding into collection
+    def upload_image_embeddings(self, collection_name:str, embedding_size:int, vector_data:list): 
         #some data preprocessing and saving into Qdrant database
         Points = []
         if isinstance(vector_data, list) and len(vector_data) != 0:
@@ -76,10 +66,6 @@ class QdrantUtils:
     #It will get collections
     def search_points(self, collection_name:str, one_face_embedding):
         try:
-            # print(one_face_embedding)
-            # Calculate the mean along dimension 1
-            # query_vector = one_face_embedding.mean()[0].tolist()
-            # print(query_vector)
             result = self.qdrant_client.search(
                 collection_name=collection_name,
                 query_vector=one_face_embedding,

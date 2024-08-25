@@ -4,8 +4,8 @@ from config.settings import get_settings
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.exc import SQLAlchemyError
-settings = get_settings()
 
+settings = get_settings()
 
 async def update_user_storage_in_db(db_session:AsyncSession, total_image_size:int, user_id:str, module:str, increment:bool=True):
     """
@@ -21,41 +21,33 @@ async def update_user_storage_in_db(db_session:AsyncSession, total_image_size:in
     Returns:
     - A tuple containing a boolean indicating success, and a dictionary with a message or detail.
 
-    :Raise: HTTPException: If the user is not found or if there is an error updating the storage in the database.
+    :Raise: HTTPException: If the user is not found or if there is an error updating the storage in the database. 
     """
 
     user = (await db_session.scalars(select(User).where(User.id == user_id))).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
-    
 
-    # Update user storage usage in the database accordingly according to module
-    try:
-        #for culling module
+    try: 
         if module == settings.APP_SMART_CULL_MODULE:
-            if increment == True:
+            if increment:
                 user.total_culling_storage_used += total_image_size
-            elif increment == False:
+            else:
                 user.total_culling_storage_used -= total_image_size
-                user.total_culling_storage_used = max(user.total_culling_storage_used, 0)#assign zero if got -ve value
-
-         #for image share module
+                user.total_culling_storage_used = max(user.total_culling_storage_used, 0)
         elif module == settings.APP_SMART_SHARE_MODULE:
-            if increment == True:
+            if increment:
                 user.total_image_share_storage_used += total_image_size
-            elif increment == False:
+            else:
                 user.total_image_share_storage_used -= total_image_size
                 user.total_image_share_storage_used = max(user.total_image_share_storage_used, 0)
         else:
-            return None, {'detail': 'No module with this name'}
-        
-        await db_session.commit()
-        await db_session.refresh(user)
-    
+            return False, {'detail': 'No module with this name'}
+
+        db_session.add(user)
+
+        return True, {'message': 'success', 'data': user}
+
     except SQLAlchemyError as e:
-        await db_session.rollback()
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Error updating storage usage in database: {str(e)}")
-    
-    return True, {'message': 'success',
-                  'data':user}
 

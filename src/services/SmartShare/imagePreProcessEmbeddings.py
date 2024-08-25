@@ -1,14 +1,15 @@
+from datetime import datetime, timedelta
 from io import BytesIO
 from uuid import uuid4
 from fastapi import HTTPException,status
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 from config.settings import get_settings
-from utils.SaveMetaDataToDB import save_image_metadata_to_DB, save_or_update_metadata_in_db
+from utils.SaveMetaDataToDB import save_image_metadata_to_DB, upsert_folder_metadata_DB
 from utils.UpdateUserStorage import update_user_storage_in_db
 
 settings = get_settings()
 
-async def preprocess_image_before_embedding(event_name:str, images:list, s3_utils, db_session:Session, total_image_size:int, user_id:str, folder_id:int):
+async def preprocess_image_before_embedding(event_name:str, images:list, s3_utils, db_session:AsyncSession, total_image_size:int, user_id:str, folder_id:int):
     """
     Processes a list of images before culling, uploads them to an AWS S3 bucket, 
     and updates metadata and user storage in the database.
@@ -36,35 +37,39 @@ async def preprocess_image_before_embedding(event_name:str, images:list, s3_util
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Error reading image file: {str(e)}")
         
         try:
-            s3_utils.upload_smart_share_images(
-                                                filename=filename,
-                                                root_folder=user_id,
-                                                event_folder=event_name,
-                                                image_data=BytesIO(image_data)
-                                            )
+            await s3_utils.upload_smart_share_images(
+                                                    filename=filename,
+                                                    root_folder=user_id,
+                                                    event_folder=event_name,
+                                                    image_data=BytesIO(image_data)
+                                                    )
             key = f"{user_id}/{event_name}/{filename}"
-            presigned_url = s3_utils.generate_presigned_url(key, expiration=settings.PRESIGNED_URL_EXPIRY_SEC)
+            presigned_url = await s3_utils.generate_presigned_url(key, expiration=settings.PRESIGNED_URL_EXPIRY_SEC)
             uploaded_images_url.append(presigned_url)
         except Exception as e:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Error uploading image to S3: {str(e)}")
         
         #adding images metadata in databse
-        images_meta_data = save_image_metadata_to_DB(
-                                    session=db_session,
-                                    img_filename=image.filename,
-                                    img_content_type=image.content_type,
-                                    user_id=user_id,
-                                    img_id=filename,
-                                    bucket_folder='/'.join(key.split('/')[:2]),
-                                    folder_id=folder_id
-                                )
+        image_metadata = {
+                        'id': filename,
+                        'name': image.filename,
+                        'download_path': presigned_url,
+                        'file_type': image.content_type,
+                        'link_validity':datetime.now() + timedelta(seconds=settings.PRESIGNED_URL_EXPIRY_SEC),
+                        'user_id': user_id,
+                        'folder_id': folder_id
+                    }
+        images_meta_data = await save_image_metadata_to_DB(
+                                                            db_session=db_session,
+                                                            match_criteria=image_metadata
+                                                        )
         
         if not images_meta_data:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Error saving images meta data to database")
     
     #updating the storage of folder in database
     match_criteria = {"name": event_name, "user_id": user_id, "module":settings.APP_SMART_SHARE_MODULE}
-    folder_meta_data = save_or_update_metadata_in_db(
+    folder_meta_data = await upsert_folder_metadata_DB(
                                                         session=db_session,
                                                         match_criteria=match_criteria,
                                                         update_fields={"total_size":total_image_size},
@@ -74,7 +79,7 @@ async def preprocess_image_before_embedding(event_name:str, images:list, s3_util
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Error saving folder meta data to database")
 
     #update the user storage in database    
-    is_valid,response = update_user_storage_in_db(db_session=db_session,
+    is_valid,response = await update_user_storage_in_db(db_session=db_session,
                                                     module=settings.APP_SMART_SHARE_MODULE,
                                                     total_image_size=total_image_size,
                                                     user_id=user_id,

@@ -67,9 +67,9 @@ def blur_image_separation(self, images, user_id:str, folder:str, folder_id:int):
                                                             db_session=db_session,
                                                             task=self
                                                         )
-            self.update_state(state='PROGRESS', meta={'progress': 100, 'info': "Blur images separation completed !"})
             return output_from_blur
-
+    self.update_state(state='PROGRESS', meta={'progress': 100, 'info': "Blur images separation completed !"})
+    asyncio.sleep(1)
     return asyncio.run(async_task())
 
 
@@ -95,10 +95,10 @@ def closed_eye_separation(self, output_from_blur, user_id:str, folder:str, folde
                 task=self, 
                 folder_id=folder_id
             )
-            
-            self.update_state(state='PROGRESS', meta={'progress': 100, 'info': "Closed eye images separation completed!"})
             return result
-
+        
+    self.update_state(state='PROGRESS', meta={'progress': 100, 'info': "Closed eye images separation completed!"})
+    asyncio.sleep(1)
     # Run the async function in a synchronous context
     return asyncio.run(async_task())
 

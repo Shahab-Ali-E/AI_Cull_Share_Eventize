@@ -29,7 +29,7 @@ from fastapi import FastAPI, Request
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.responses import RedirectResponse
 from config.settings import get_settings
-from routes import OAuth, Culling, SmartShare
+from routes import OAuth, Culling, SmartShare, Task
 from config.Database import sessionmanager, Base
 from Celery.utils import create_celery
 from contextlib import asynccontextmanager 
@@ -45,9 +45,11 @@ async def lifeSpan(app:FastAPI):
     # Initialize or load the ML models
     ModelManager.get_models(settings)
     print('Test connection to database')
-    async with sessionmanager.connect():
-        pass 
+    async with sessionmanager.connect() as conn:
+        conn.execute('SELECT 1')
+
     yield
+    print('closing database connection')
     if sessionmanager._engine is None:
         # Close the DB connection
         await sessionmanager.close()
@@ -69,7 +71,7 @@ app.include_router(OAuth.router)
 app.include_router(OAuth.welcome_route)
 app.include_router(Culling.router)
 app.include_router(SmartShare.router)
-
+app.include_router(Task.router)
 
 @app.get('/')
 async def method_name(request: Request):

@@ -1,8 +1,9 @@
 from fastapi import APIRouter, Request, status, Depends, HTTPException
 from starlette.responses import RedirectResponse
 from dependencies.core import DBSessionDep
+from dependencies.user import get_user
 from schemas.user import UserResponse
-from services.Auth.google_auth import get_user, google_auth, google_login
+from services.Auth.google_auth import google_auth, google_login
 import logging
 
 # Initialize logging

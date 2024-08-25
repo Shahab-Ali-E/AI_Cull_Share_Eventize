@@ -56,7 +56,7 @@ async def save_image_metadata_to_DB(match_criteria: dict, db_session:AsyncSessio
 
 
 
-async def save_or_update_metadata_in_db(db_session: AsyncSession, match_criteria: dict, update_fields: dict = None, update=False):
+async def upsert_folder_metadata_DB(db_session: AsyncSession, match_criteria: dict, update_fields: dict = None, update=False): 
     """
     Save or update folder metadata in the database.
 
@@ -80,6 +80,7 @@ async def save_or_update_metadata_in_db(db_session: AsyncSession, match_criteria
               For updates, it returns the updated record; for inserts, it returns the newly created record.
     """
     try:
+        
         if update:
             # Build the where clause using SQLAlchemy expressions
             conditions = [getattr(FolderInS3.FoldersInS3, key) == value for key, value in match_criteria.items()]
@@ -90,20 +91,15 @@ async def save_or_update_metadata_in_db(db_session: AsyncSession, match_criteria
             # Update only the specified fields
             for key, value in update_fields.items():
                 setattr(existing_record, key, value)
+
         else:
             # Create a new record
             new_record = FolderInS3.FoldersInS3(**match_criteria)
-            db_session.add(new_record)
             existing_record = new_record
-
-        # Commit the transaction
-        await db_session.commit()
-        if existing_record:
-            await db_session.refresh(existing_record)
+        
+        db_session.add(existing_record)
 
     except SQLAlchemyError as e:
-        # Rollback in case of an error
-        await db_session.rollback()
         raise HTTPException(status_code=500, detail=f"Error saving or updating metadata: {str(e)}")
     
     return {"status": "success", "data": existing_record}
