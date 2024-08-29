@@ -4,7 +4,7 @@ from uuid import uuid4
 from fastapi import HTTPException,status
 from sqlalchemy.ext.asyncio import AsyncSession
 from config.settings import get_settings
-from utils.SaveMetaDataToDB import save_image_metadata_to_DB, upsert_folder_metadata_DB
+from utils.UpsertMetaDataToDB import upsert_image_metadata_DB, upsert_folder_metadata_DB
 from utils.UpdateUserStorage import update_user_storage_in_db
 
 settings = get_settings()
@@ -59,7 +59,7 @@ async def preprocess_image_before_embedding(event_name:str, images:list, s3_util
                         'user_id': user_id,
                         'folder_id': folder_id
                     }
-        images_meta_data = await save_image_metadata_to_DB(
+        images_meta_data = await upsert_image_metadata_DB(
                                                             db_session=db_session,
                                                             match_criteria=image_metadata
                                                         )

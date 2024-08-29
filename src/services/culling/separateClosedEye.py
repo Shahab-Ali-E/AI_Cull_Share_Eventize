@@ -1,11 +1,11 @@
 from datetime import datetime, timedelta
 import io
+import time
 import cv2
 import numpy as np
 from tensorflow.keras.preprocessing.image import img_to_array # type: ignore
 from uuid import uuid4
 from PIL import Image
-from utils.SaveMetaDataToDB import save_image_metadata_to_DB
 from config.settings import get_settings
 from dependencies.mlModelsManager import ModelManager
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,12 +17,11 @@ models = ModelManager.get_models(settings)
 
 class ClosedEyeDetection:
 
-    def __init__(self, S3_util_obj, root_folder:str, inside_root_main_folder:str, db_session:AsyncSession):
+    def __init__(self, S3_util_obj, root_folder:str, inside_root_main_folder:str):
         self.face_detector = models['face_detector']
         self.model = models['closed_eye_detection_model']
         self.S3 = S3_util_obj
         self.root_folder = root_folder
-        self.db_session = db_session
         self.inside_root_main_folder = inside_root_main_folder
         self.upload_image_folder = settings.CLOSED_EYE_FOLDER
 
@@ -86,11 +85,11 @@ class ClosedEyeDetection:
         return results
 
     # It will take single or bunch of images and upload them to S3 after making prediction
-    async def separate_closed_eye_images_and_upload_to_s3(self, images, folder_id, task):
-        open_eyes_images = []  # Initialize the list outside the loop
+    async def separate_closed_eye_images_and_upload_to_s3(self, images:list, folder_id:int, task, prev_image_metadata:list=[]):
+        open_eyes_images = []
+        closed_eye_metadata = prev_image_metadata
         response = None
         total_img_len = len(images)
-        
         for index, image in enumerate(images):
             result = await self.process_image(image)
             
@@ -129,11 +128,9 @@ class ClosedEyeDetection:
                         'user_id': self.root_folder,
                         'folder_id': folder_id
                     }
-                    # Saving the closed eye images into Database
-                    await save_image_metadata_to_DB(
-                                                    db_session=self.db_session,
-                                                    match_criteria=image_metadata
-                                                )
+
+                    #appending closed images metadata to and array
+                    closed_eye_metadata.append(image_metadata)
                     
                 else:
                     open_eyes_images.append(image)  # Append the image if eyes are open
@@ -141,7 +138,15 @@ class ClosedEyeDetection:
             # Updating progress here
             if task:
                 progress = ((index + 1) / total_img_len) * 100
-            task.update_state(state='PROGRESS', meta={'progress': progress, 'info': 'Closed eye image separation processing'})
-        
-        return open_eyes_images, response or "No closed eye image were found"
+                task.update_state(state='PROGRESS', meta={'progress': progress, 'info': 'Closed eye image separation processing'})
+
+        response = 'closed eye' + response if response == 'image uploaded successfully' else response
+        task.update_state(state='PROGRESS', meta={'progress': 100, 'info': 'Duplicate image separation done!'})
+        time.sleep(1)  
+        return {
+            'status': 'success',
+            'open_eye_images': open_eyes_images,
+            'images_metadata':closed_eye_metadata,
+            's3_response':response
+        }
 

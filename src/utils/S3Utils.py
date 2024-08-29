@@ -73,6 +73,42 @@ class S3Utils:
                 Key=folder_key
             )   
         )
+    async def delete_single_object(self, file_key):
+        """
+        Deletes a single object from an AWS S3 bucket asynchronously.
+
+        Args:
+            file_key (str): The key of the object to delete from the S3 bucket.
+
+        Returns:
+            tuple: A dictionary with a success or failure message and an HTTP status code (`HTTP_200_OK` or `HTTP_400_BAD_REQUEST`).
+
+        Raises:
+            Exception: Raises a detailed error message if a `ClientError` occurs during deletion.
+
+        Description:
+            Uses the boto3 `delete_object` function to delete an S3 object asynchronously. The operation is offloaded to an executor to avoid blocking the event loop. It checks the response status to determine success or failure.
+        """
+        loop = asyncio.get_running_loop()
+        # Delete a single object and return
+        try:
+            # Delete a single object and return
+            response = await loop.run_in_executor(
+                self.executor,
+                lambda: self.client.delete_object(
+                    Bucket=self.bucket_name,
+                    Key=file_key
+                )
+            )
+            # Check for successful deletion
+            if response.get('ResponseMetadata', {}).get('HTTPStatusCode') == 204:
+                return {'message': 'Deleted successfully'}, status.HTTP_200_OK
+            else:
+                return {'message': 'Failed to delete object'}, status.HTTP_400_BAD_REQUEST
+        except ClientError as e:
+            # Raise an exception with a detailed error message
+            raise Exception(f"ClientError during S3 object deletion: {str(e)}")
+        
 
     #It will delete an Object from S3
     async def delete_object(self, folder_key):
@@ -101,18 +137,19 @@ class S3Utils:
                 delete_keys = [{'Key':obj['Key']} for obj in objects_to_delete['Contents']]
                 
                 # Delete all objects and return
-                return await loop.run_in_executor(
+                await loop.run_in_executor(
                     self.executor,
                     lambda:self.client.delete_objects(
                         Bucket=self.bucket_name,
                         Delete={'Objects': delete_keys}#to delete
                     )
                 )
+                return {"message": "Objects deleted successfully"}, status.HTTP_204_NO_CONTENT
             else:
-                return {"message":"No objects found to delete in S3"}
+                return {"message":"No objects found to delete in S3"}, status.HTTP_404_NOT_FOUND
 
         except ClientError as e:
-            raise HTTPException(status_code=400, detail=f"Unable to delete folder: {e}")
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Unable to delete folder: {e}")
         
         
     #It is use to create folder when all images are ready to cull and user starts culling
@@ -167,7 +204,7 @@ class S3Utils:
             self.create_object(root_folder)
         
         if await self.folder_exists(event_name):
-            raise HTTPException(f'Event with name "{event_name}" already exists.')
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f'Event with name "{event_name}" already exists.')
         else:
             await self.create_object(event_name)
         
@@ -209,7 +246,7 @@ class S3Utils:
             )
         )
 
-        return {"image uploaded successfully"}
+        return "image uploaded successfully"
     
         #This will upload the prdicted images to right folder like blur goes in blur_image_folder and vice versa
     async def upload_smart_share_images(self, root_folder, event_folder, image_data, filename):

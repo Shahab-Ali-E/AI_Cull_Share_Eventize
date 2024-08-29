@@ -3,7 +3,7 @@ from fastapi import UploadFile, HTTPException,status
 from uuid import uuid4
 from config.settings import get_settings
 from sqlalchemy.ext.asyncio import AsyncSession
-from utils.SaveMetaDataToDB import upsert_folder_metadata_DB
+from utils.UpsertMetaDataToDB import upsert_folder_metadata_DB
 from utils.UpdateUserStorage import update_user_storage_in_db
 from sqlalchemy.exc import SQLAlchemyError
 settings = get_settings()

@@ -1,12 +1,11 @@
 from datetime import datetime, timedelta
+import time
 from PIL import Image
 import io
 import torch
 from uuid import uuid4
-from utils.SaveMetaDataToDB import save_image_metadata_to_DB
 from config.settings import get_settings
 from dependencies.mlModelsManager import ModelManager
-from sqlalchemy.ext.asyncio import AsyncSession
 
 settings = get_settings()
 
@@ -15,13 +14,14 @@ predicted_labels = ['undistorted', 'blurred']
 upload_image_folder = settings.BLUR_FOLDER
 
 #models
-models = ModelManager.get_models(settings)
+models = ModelManager.get_models(settings=settings)
 feature_extractor = models['feature_extractor']
 blur_detect_model = models['blur_detect_model']
 
 
-async def separate_blur_images(images:list, root_folder:str, inside_root_main_folder:str, folder_id:int, S3_util_obj, db_session:AsyncSession, task):
-    results = []
+async def separate_blur_images(images:list, root_folder:str, inside_root_main_folder:str, folder_id:int, S3_util_obj, task):
+    non_blur_images = []
+    blurred_metadata = []
     response = None
     total_img_len = len(images)
 
@@ -78,18 +78,21 @@ async def separate_blur_images(images:list, root_folder:str, inside_root_main_fo
                 'user_id': root_folder,
                 'folder_id': folder_id
             }
-
-            # Saving the blur images into Database
-            await save_image_metadata_to_DB(
-                                            db_session=db_session,
-                                            match_criteria=image_metadata 
-                                            )
+            blurred_metadata.append(image_metadata)
         else:
-            results.append(image)
+            non_blur_images.append(image)
 
         # Update the progress
         if task:
             progress = ((index + 1) / total_img_len) * 100
             task.update_state(state='PROGRESS', meta={'progress': progress, 'info': 'Blur image separation processing'})
-
-    return results, response or "No blur images were found"
+            
+    response = 'Blur ' + response if response == 'image uploaded successfully' else response
+    task.update_state(state='PROGRESS', meta={'progress': 100, 'info': 'Duplicate image separation done!'})
+    time.sleep(1)
+    return {
+            'status': 'success',
+            'non_blur_images': non_blur_images,
+            'images_metadata':blurred_metadata,
+            's3_response':response
+        }  

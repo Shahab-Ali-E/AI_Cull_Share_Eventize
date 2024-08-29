@@ -31,6 +31,7 @@ clip = {git = "https://github.com/openai/CLIP.git", rev = "main"}
 open-clip-torch = "^2.26.1"
 sentence-transformers = "^3.0.1"
 asyncpg = "^0.29.0"
+pytest-mock = "^3.14.0"
 
 
 [build-system]

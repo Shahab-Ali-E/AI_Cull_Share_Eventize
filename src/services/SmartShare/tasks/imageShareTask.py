@@ -4,7 +4,7 @@ from Celery.utils import create_celery
 from celery import chain
 from services.Culling.tasks.cullingTask import get_images_from_aws
 from services.SmartShare.extractFace import extract_face
-from services.SmartShare.generateEmeddings import generate_face_embeddings
+from utils.generateEmeddings import generate_embeddings
 from utils.CustomExceptions import URLExpiredException
 from utils.QdrantUtils import QdrantUtils
 
@@ -47,7 +47,7 @@ def generate_embeddings(self, faces_data:list):
             if not pil_obj:
                 continue #skip if no face pillow obj found
 
-            embeddings = generate_face_embeddings(
+            embeddings = generate_embeddings(
                 image_name=image_name,
                 image_pillow_obj=pil_obj,
             )

@@ -3,10 +3,7 @@ from tensorflow.keras.models import load_model  # type: ignore
 from mtcnn import MTCNN
 import torch
 
-
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
-
 
 # Singleton pattern to manage models
 class ModelManager:

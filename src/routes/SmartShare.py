@@ -7,8 +7,8 @@ from schemas.cullingData import cullingData
 from schemas.imageMetaDataResponse import ImageMetaDataResponse
 from dependencies.user import get_user
 from config.settings import get_settings
-from services.Culling.deleteFolderFromS3 import delete_s3_folder_and_update_db
 from services.SmartShare.createEvent import create_event_in_S3_and_DB
+from services.SmartShare.deleteEvent import delete_event_s3_db_collection
 from services.SmartShare.getImagesByFaceRecog import get_images_by_face_recog
 from services.SmartShare.imagePreProcessEmbeddings import preprocess_image_before_embedding
 from services.SmartShare.tasks.imageShareTask import image_share_task
@@ -44,13 +44,14 @@ async def create_event(event_name:str, request:Request, db_session:DBSessionDep,
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='unauthorized access')
     try:
         async with db_session.begin():
-            response = await create_event_in_S3_and_DB(request=request, event_name=event_name.lower(), user_id=user_id, s3_utils_obj=s3_utils, qdrant_util_obj=qdrant_util, db_session=db_session)
+            response = await create_event_in_S3_and_DB(event_name=event_name.lower(), user_id=user_id, s3_utils_obj=s3_utils, db_session=db_session)
             await db_session.commit()
             return response
     
     except HTTPException as e:
         await db_session.rollback()
         raise HTTPException(status_code=e.status_code, detail=str(e))
+    
     except Exception as e:
         await db_session.rollback()
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
@@ -169,26 +170,20 @@ async def get_images(event_name:str, request:Request, db_session:DBSessionDep, i
 
 @router.delete('/delete_event/{event_name}', status_code=status.HTTP_200_OK)
 async def delete_event(event_name:str, request:Request, db_session:DBSessionDep, user:User = Depends(get_user)):
-
     user_id = request.session.get('user_id')
     if not user_id:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='unauthorized access')
-    
-    folder_path = f'{user_id}/{event_name}/'
 
     try:
         async with db_session.begin():
-            s3_res , db_res = await delete_s3_folder_and_update_db(del_folder_path=folder_path,
-                                                                    db_session=db_session, 
-                                                                    s3_obj=s3_utils,
-                                                                    module=settings.APP_SMART_SHARE_MODULE,
-                                                                    user_id=user_id
-                                                                    )
-            
-            qdrant_response = qdrant_util.remove_collection(collection_name=event_name)
+            response = await delete_event_s3_db_collection(db_session=db_session,
+                                          event_name=event_name,
+                                          qdrant_util_obj=qdrant_util,
+                                          s3_utils_obj=s3_utils,
+                                          user_id=user_id
+                                          )
             await db_session.commit()
-
-            return {'s3 response':s3_res,'Database response':db_res,'collection_deleted':qdrant_response}
+            return response
     except HTTPException as e:
         await db_session.rollback()
         raise HTTPException(status_code=e.status_code, detail=str(e))

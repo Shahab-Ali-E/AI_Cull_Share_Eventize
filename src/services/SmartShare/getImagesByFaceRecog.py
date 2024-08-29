@@ -5,7 +5,7 @@ from config.settings import get_settings
 import torch
 from model.ImagesMetaData import ImagesMetaData
 from services.SmartShare.extractFace import extract_face
-from services.SmartShare.generateEmeddings import generate_face_embeddings
+from utils.generateEmeddings import generate_embeddings
 from transformers import CLIPImageProcessor, CLIPModel
 
 
@@ -50,7 +50,7 @@ async def get_images_by_face_recog(image:UploadFile, user_id:str, event_name:str
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f'You can only provide an image of one person—no more, no less')
 
 
-    face_embeddings =  generate_face_embeddings(image_name=image.filename,
+    face_embeddings =  generate_embeddings(image_name=image.filename,
                                         image_pillow_obj=face_data.get('faces')[0],
                                         model=model,
                                         processor=preprocessor,

@@ -58,15 +58,19 @@ async def delete_s3_folder_and_update_db(del_folder_path: str, db_session: Async
         )
 
         # Attempt to delete the folder from S3
-        s3_response = await s3_obj.delete_object(folder_key=del_folder_path)
+        s3_response, status_code = await s3_obj.delete_object(folder_key=del_folder_path)
 
         # Check S3 deletion response
-        if not s3_response.get('ResponseMetadata', {}).get('HTTPStatusCode') == 200:
+        if status_code == 404:
             await db_session.rollback()
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
+                status_code=status_code,
                 detail=s3_response
             )
+        
+    except HTTPException as e:
+        await db_session.rollback()
+        raise e
         
     except Exception as e:
         await db_session.rollback()

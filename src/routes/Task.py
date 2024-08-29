@@ -42,6 +42,6 @@ async def get_task_status(request:Request,task_id: str, user:User = Depends(get_
 
             if task_info['state'] in ['FAILURE','SUCCESS']:
                 break
-            await asyncio.sleep(1)  # Adjust the sleep time as needed
+            await asyncio.sleep(2)  # Adjust the sleep time as needed
 
     return EventSourceResponse(event_generator(task_id))

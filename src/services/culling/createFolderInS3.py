@@ -1,6 +1,6 @@
 from config.settings import get_settings
 from fastapi import HTTPException,status
-from utils.SaveMetaDataToDB import upsert_folder_metadata_DB
+from utils.UpsertMetaDataToDB import upsert_folder_metadata_DB
 from model.FolderInS3 import FoldersInS3
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select

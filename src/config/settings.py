@@ -74,13 +74,15 @@ class Settings(BaseSettings):
     #BLUR IMAGE DETECTION MODEL
     FEATURE_EXTRACTOR : str = os.environ.get("FEATURE_EXTRACTOR",None)
     BLUR_VIT_MODEL: str = os.environ.get("BLUR_IMAGE_DETECTION_MODEL_PATH",None)
-
     #CLOSED EYE DETECTIO MODEL
     CLOSED_EYE_DETECTION_MODEL : str = os.environ.get("CLOSED_EYE_DETECTION_MODEL",None)
     FACE_CASCADE_MODEL: str = os.environ.get("FACE_CASCADE_MODEL",None)
-
     #FACE_EMBEDDING_GENERATOR_MODEL
     FACE_EMBEDDING_GENERATOR_MODEL:str = os.environ.get('FACE_EMBEDDING_GENERATOR_MODEL',None)
+    #Threshold values for face comparision
+    FACE_COMPARE_THRESHOLD:float = os.environ.get('FACE_COMPARE_THRESHOLD',None)
+    #Threshold value for duplicate image detection
+    BLUR_IMAGE_THRESHOLD:int = os.environ.get('BLUR_IMAGE_THRESHOLD',None)
 
     #CELERY VARIABLES
     CELERY_BROKER_URL:str = os.environ.get("CELERY_BROKER_URL",None)
