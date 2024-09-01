@@ -3,11 +3,10 @@ from tensorflow.keras.models import load_model  # type: ignore
 from mtcnn import MTCNN
 import torch
 
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
 # Singleton pattern to manage models
 class ModelManager:
     _models = None
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     @staticmethod #this decoretor allow us to do not create instance of class we can call this function by just class name
     def get_models(settings):
@@ -19,13 +18,13 @@ class ModelManager:
     def initialize_models(settings):
     
         # Blur detection loading 
-        blur_detect_model = ViTForImageClassification.from_pretrained(settings.BLUR_VIT_MODEL, from_tf=True).to(device)
+        blur_detect_model = ViTForImageClassification.from_pretrained(settings.BLUR_VIT_MODEL, from_tf=True).to(ModelManager.device)
         feature_extractor = ViTFeatureExtractor.from_pretrained(settings.FEATURE_EXTRACTOR)
         #closed eye detection loading
         closed_eye_detection_model = load_model(settings.CLOSED_EYE_DETECTION_MODEL)
         # Initialize processor and model for embeddings
         embedding_img_processor = CLIPImageProcessor.from_pretrained(settings.FACE_EMBEDDING_GENERATOR_MODEL)
-        embedding_model = CLIPModel.from_pretrained(settings.FACE_EMBEDDING_GENERATOR_MODEL).to(device)
+        embedding_model = CLIPModel.from_pretrained(settings.FACE_EMBEDDING_GENERATOR_MODEL).to(ModelManager.device)
         #Face detector model
         face_detector = MTCNN()
 

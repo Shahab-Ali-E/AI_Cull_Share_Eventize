@@ -27,7 +27,7 @@ async def preprocess_image_before_embedding(event_name:str, images:list, s3_util
     """
 
     uploaded_images_url =[]
-
+    images_metadata = []
     for image in images:
         filename = f'{uuid4()}_{image.filename}' 
         #some image validation
@@ -50,7 +50,7 @@ async def preprocess_image_before_embedding(event_name:str, images:list, s3_util
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Error uploading image to S3: {str(e)}")
         
         #adding images metadata in databse
-        image_metadata = {
+        img_data = {
                         'id': filename,
                         'name': image.filename,
                         'download_path': presigned_url,
@@ -59,38 +59,53 @@ async def preprocess_image_before_embedding(event_name:str, images:list, s3_util
                         'user_id': user_id,
                         'folder_id': folder_id
                     }
-        images_meta_data = await upsert_image_metadata_DB(
-                                                            db_session=db_session,
-                                                            match_criteria=image_metadata
-                                                        )
-        
-        if not images_meta_data:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Error saving images meta data to database")
-    
-    #updating the storage of folder in database
-    match_criteria = {"name": event_name, "user_id": user_id, "module":settings.APP_SMART_SHARE_MODULE}
-    folder_meta_data = await upsert_folder_metadata_DB(
-                                                        session=db_session,
-                                                        match_criteria=match_criteria,
-                                                        update_fields={"total_size":total_image_size},
-                                                        task='update'
-                                                    )
-    if not folder_meta_data:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Error saving folder meta data to database")
 
-    #update the user storage in database    
-    is_valid,response = await update_user_storage_in_db(db_session=db_session,
-                                                    module=settings.APP_SMART_SHARE_MODULE,
-                                                    total_image_size=total_image_size,
-                                                    user_id=user_id,
-                                                    operation='increment'
-                                                    )
-    if not is_valid:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"{response}")
+        images_metadata.append(img_data)
     
-    return {
-        'message': f'URLs are valid for {settings.PRESIGNED_URL_EXPIRY_SEC} seconds',
-        'urls': uploaded_images_url,
-        'storage_update':response,
-        'folder_date':folder_meta_data
-    }
+    if images_metadata:
+        try:
+            db_response = await upsert_image_metadata_DB(
+                                                     db_session=db_session,
+                                                     bulk_insert_fields=images_metadata,                
+                                                    )
+               
+            if not db_response:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Error saving images meta data to database")
+    
+            #updating the storage of folder in database
+            match_criteria = {"name": event_name, "user_id": user_id, "module":settings.APP_SMART_SHARE_MODULE}
+            folder_meta_data = await upsert_folder_metadata_DB(
+                                                                db_session=db_session,
+                                                                match_criteria=match_criteria,
+                                                                update_fields={"total_size":total_image_size},
+                                                                update=True
+                                                            )
+            if not folder_meta_data:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Error saving folder meta data to database")
+
+            #update the user storage in database    
+            is_valid,response = await update_user_storage_in_db(db_session=db_session,
+                                                                module=settings.APP_SMART_SHARE_MODULE,
+                                                                total_image_size=total_image_size,
+                                                                user_id=user_id,
+                                                                increment=True
+                                                                )
+            if not is_valid:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"{response}")
+        
+            return {
+                'message': f'URLs are valid for {settings.PRESIGNED_URL_EXPIRY_SEC} seconds',
+                'urls': uploaded_images_url,
+                'storage_update':response,
+                'folder_date':folder_meta_data
+            }
+
+        except HTTPException as e:
+            await db_session.rollback()
+            await s3_utils.delete_object(folder_key=f'{user_id}/{event_name}/', rollback=True)
+            raise HTTPException(status_code=e.status_code, detail=str(e))
+
+        except Exception as e:
+            await db_session.rollback()
+            await s3_utils.delete_object(folder_key=f'{user_id}/{event_name}/', rollback=True)
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))

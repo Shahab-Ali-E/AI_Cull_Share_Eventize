@@ -66,8 +66,6 @@ async def upsert_image_metadata_DB(db_session:AsyncSession, match_criteria:dict=
         raise Exception(f"Error saving image metadata: {str(e)}")
     
 
-
-
 async def upsert_folder_metadata_DB(db_session: AsyncSession, match_criteria: dict, update_fields: dict = None, update=False): 
     """
     Save or update folder metadata in the database.

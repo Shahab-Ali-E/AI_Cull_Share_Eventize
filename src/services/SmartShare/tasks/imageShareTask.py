@@ -73,8 +73,7 @@ def uploading_embeddings(self, all_embeddings, event_name:str):
 
 @celery.task(name='image_share_task', bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={'max_retries': 2}, queue='smart_sharing')
 def image_share_task(self, user_id:str, uploaded_images_url:list, event_name:str):
-    # self.update_state(state='STARTED', meta={'status': 'Task started'})
-
+    self.update_state(state='STARTED', meta={'status': 'Task started'})
     task_ids = []
     try:
         # Chain the tasks correctly

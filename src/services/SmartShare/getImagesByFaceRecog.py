@@ -1,25 +1,18 @@
 from typing import Dict
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import UploadFile, HTTPException,status
 from config.settings import get_settings
 import torch
 from model.ImagesMetaData import ImagesMetaData
 from services.SmartShare.extractFace import extract_face
 from utils.generateEmeddings import generate_embeddings
-from transformers import CLIPImageProcessor, CLIPModel
-
-
-
 import torch
-import open_clip
-import cv2
-from sentence_transformers import util
-
 from services.SmartShare.similaritySearch import get_similar_images
 
 # from services.SmartShare.similaritySearch import getSimilarity
 #----instances---
 settings = get_settings()
+
 def image_to_dict(image: ImagesMetaData) -> Dict:
     return {
         'id': image.id,
@@ -28,18 +21,17 @@ def image_to_dict(image: ImagesMetaData) -> Dict:
         # Add other fields as needed
     }
 
-async def get_images_by_face_recog(image:UploadFile, user_id:str, event_name:str, qdrant_util, db_session:Session):
+async def get_images_by_face_recog(image:UploadFile, user_id:str, event_name:str, event_id:int, qdrant_util, db_session:AsyncSession):
     
     #Initialize processor and model for embeddings
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    
     # processor = AutoImageProcessor.from_pretrained(settings.FACE_EMBEDDING_GENERATOR_MODEL)
     # model = ResNetForImageClassification.from_pretrained(settings.FACE_EMBEDDING_GENERATOR_MODEL).to(device)
 
     # preprocessor = open_clip.create_model_and_transforms('ViT-B-16-plus-240', pretrained="laion400m_e32")[1]
     # model = open_clip.create_model_and_transforms('ViT-B-16-plus-240', pretrained="laion400m_e32")[0].to(device)
     # mm = 'openai/clip-vit-base-patch16'
-    model = CLIPModel.from_pretrained(settings.FACE_EMBEDDING_GENERATOR_MODEL).to(device)
-    preprocessor = CLIPImageProcessor.from_pretrained(settings.FACE_EMBEDDING_GENERATOR_MODEL)
+
 
     content = await image.read()
     #extract face
@@ -51,11 +43,8 @@ async def get_images_by_face_recog(image:UploadFile, user_id:str, event_name:str
 
 
     face_embeddings =  generate_embeddings(image_name=image.filename,
-                                        image_pillow_obj=face_data.get('faces')[0],
-                                        model=model,
-                                        processor=preprocessor,
-                                        device=device
-                                    )
+                                        image_pillow_obj=face_data.get('faces')[0], 
+                                        )
     
     #it will get only those images which are match with face only
     message , similar_images = get_similar_images(event_name=event_name,
@@ -63,6 +52,7 @@ async def get_images_by_face_recog(image:UploadFile, user_id:str, event_name:str
                                                 qdrant_util=qdrant_util,
                                                 user_id=user_id,
                                                 db_session=db_session,
+                                                event_id=event_id,
                                                 threshold=0.845
                                                 )
     

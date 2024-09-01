@@ -43,12 +43,6 @@ async def create_folder_in_S3(dir_name:str, s3_utils_obj, db_session:AsyncSessio
                                         match_criteria=match_criteria
                                         )
     except Exception as e:
-        try:
-            await s3_utils_obj.delete_object(folder_key=f'{user_id}/{dir_name}')
-        except Exception as rollback_exception:
-            # Log the rollback failure and raise an error with details
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
-                                detail=f"Failed to save metadata in DB and rollback S3 operation failed: {str(rollback_exception)}. "
-                                       f"Original error: {str(e)}")
+        await s3_utils_obj.delete_object(folder_key=f'{user_id}/{dir_name}/')
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f'343434{str(e)}')
 

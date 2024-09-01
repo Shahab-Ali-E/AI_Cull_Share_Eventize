@@ -7,7 +7,7 @@ from services.Culling.separateClosedEye import ClosedEyeDetection
 from config.Database import get_db
 from services.Culling.separateDuplicateImages import separate_duplicate_images
 from utils.UpsertMetaDataToDB import upsert_image_metadata_DB
-from utils.CustomExceptions import URLExpiredException
+from utils.CustomExceptions import SignatureDoesNotMatch, URLExpiredException, UnauthorizedAccess
 from utils.S3Utils import S3Utils
 from Celery.utils import create_celery
 import requests
@@ -57,9 +57,14 @@ def get_images_from_aws(self, uploaded_images_url:list):
         image_name = image.split("/")[-1].split('?')[0]
         image_size = len(image_content)
 
-        if b'<Error>' in image_content and b'<Code>AccessDenied</Code>' in image_content:
-            raise URLExpiredException()
-        
+        if b'<Error>' in image_content:
+            if b'<Code>AccessDenied</Code>' in image_content:
+                raise URLExpiredException()
+            if b'<Code>SignatureDoesNotMatch</Code>' in image_content:
+                raise SignatureDoesNotMatch()
+            if b'<Code>InvalidAccessKeyId</Code>' in image_content:
+                raise UnauthorizedAccess()
+
         else:
             images.append({
                 'content_type': content_type,

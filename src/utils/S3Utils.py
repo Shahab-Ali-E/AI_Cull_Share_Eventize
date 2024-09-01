@@ -73,45 +73,45 @@ class S3Utils:
                 Key=folder_key
             )   
         )
-    async def delete_single_object(self, file_key):
-        """
-        Deletes a single object from an AWS S3 bucket asynchronously.
 
-        Args:
-            file_key (str): The key of the object to delete from the S3 bucket.
+    # async def rollback_uploaded_images(self, folder_key):
+    #     """
+    #     Deletes all uploaded images inside a folder from an AWS S3 bucket asynchronously.
 
-        Returns:
-            tuple: A dictionary with a success or failure message and an HTTP status code (`HTTP_200_OK` or `HTTP_400_BAD_REQUEST`).
+    #     Args:
+    #         folder_key (str): The key of the folder to delete from the S3 bucket.
 
-        Raises:
-            Exception: Raises a detailed error message if a `ClientError` occurs during deletion.
+    #     Returns:
+    #         tuple: A dictionary with a success or failure message and an HTTP status code (`HTTP_200_OK` or `HTTP_400_BAD_REQUEST`).
 
-        Description:
-            Uses the boto3 `delete_object` function to delete an S3 object asynchronously. The operation is offloaded to an executor to avoid blocking the event loop. It checks the response status to determine success or failure.
-        """
-        loop = asyncio.get_running_loop()
-        # Delete a single object and return
-        try:
-            # Delete a single object and return
-            response = await loop.run_in_executor(
-                self.executor,
-                lambda: self.client.delete_object(
-                    Bucket=self.bucket_name,
-                    Key=file_key
-                )
-            )
-            # Check for successful deletion
-            if response.get('ResponseMetadata', {}).get('HTTPStatusCode') == 204:
-                return {'message': 'Deleted successfully'}, status.HTTP_200_OK
-            else:
-                return {'message': 'Failed to delete object'}, status.HTTP_400_BAD_REQUEST
-        except ClientError as e:
-            # Raise an exception with a detailed error message
-            raise Exception(f"ClientError during S3 object deletion: {str(e)}")
+    #     Raises:
+    #         Exception: Raises a detailed error message if a `ClientError` occurs during deletion.
+
+    #     Description:
+    #         Uses the boto3 `rollback_uploaded_images` function to delete an S3 all uploaded images asynchronously. The operation is offloaded to an executor to avoid blocking the event loop. It checks the response status to determine success or failure.
+    #     """
+    #     loop = asyncio.get_running_loop()
+    #     # Delete a single object and return
+    #     try:
+    #         # Delete a single object and return
+    #         response = await loop.run_in_executor(
+    #             self.executor,
+    #             lambda: self.client.delete_object(
+    #                 Bucket=self.bucket_name,
+    #                 Key=file_key
+    #             )
+    #         )
+    #         # Check for successful deletion
+    #         if response.get('ResponseMetadata', {}).get('HTTPStatusCode') == 204:
+    #             return {'message': 'Deleted successfully'}, status.HTTP_200_OK
+    #         else:
+    #             return {'message': 'Failed to delete object'}, status.HTTP_400_BAD_REQUEST
+    #     except ClientError as e:
+    #         # Raise an exception with a detailed error message
+    #         raise Exception(f"ClientError during S3 object deletion: {str(e)}")
         
 
-    #It will delete an Object from S3
-    async def delete_object(self, folder_key):
+    async def delete_object(self, folder_key, rollback=False):
         """
         Deletes an object or folder and its contents from the S3 bucket.
         Args:
@@ -124,7 +124,7 @@ class S3Utils:
         try:
             # List all objects under the specified prefix (folder)
             loop = asyncio.get_running_loop()
-            objects_to_delete = await loop.run_in_executor(
+            response = await loop.run_in_executor(
                 self.executor,
                 lambda:self.client.list_objects_v2(
                     Bucket=self.bucket_name, 
@@ -133,17 +133,26 @@ class S3Utils:
             )
 
             # Check if there are objects to delete
-            if 'Contents' in objects_to_delete:
-                delete_keys = [{'Key':obj['Key']} for obj in objects_to_delete['Contents']]
-                
-                # Delete all objects and return
-                await loop.run_in_executor(
-                    self.executor,
-                    lambda:self.client.delete_objects(
-                        Bucket=self.bucket_name,
-                        Delete={'Objects': delete_keys}#to delete
+            if 'Contents' in response:
+                delete_keys = [{'Key':obj['Key']} for obj in response['Contents']]
+                if rollback:
+                    #Delete only content of folder
+                    await loop.run_in_executor(
+                        self.executor,
+                        lambda:self.client.delete_objects(
+                            Bucket=self.bucket_name,
+                            Delete={'Objects': delete_keys[1:]}
+                        )
                     )
-                )
+                else:
+                    #Delete full folder with it's objects
+                    await loop.run_in_executor(
+                        self.executor,
+                        lambda:self.client.delete_objects(
+                            Bucket=self.bucket_name,
+                            Delete={'Objects': delete_keys}
+                        )
+                    )
                 return {"message": "Objects deleted successfully"}, status.HTTP_204_NO_CONTENT
             else:
                 return {"message":"No objects found to delete in S3"}, status.HTTP_404_NOT_FOUND

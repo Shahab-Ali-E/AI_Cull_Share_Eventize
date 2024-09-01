@@ -42,12 +42,13 @@ async def update_user_storage_in_db(db_session:AsyncSession, total_image_size:in
                 user.total_image_share_storage_used -= total_image_size
                 user.total_image_share_storage_used = max(user.total_image_share_storage_used, 0)
         else:
-            return False, {'detail': 'No module with this name'}
+            return False, {'message':'faild', 'detail': 'No module with this name'}
 
         db_session.add(user)
 
         return True, {'message': 'success', 'data': user}
 
     except SQLAlchemyError as e:
+        await db_session.rollback()
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Error updating storage usage in database: {str(e)}")
 

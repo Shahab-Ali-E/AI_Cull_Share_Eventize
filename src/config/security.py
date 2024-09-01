@@ -60,12 +60,18 @@ async def validate_images_and_storage(
         combined_image_size += file_size
         file.file.seek(0)  # Reset file pointer for further processing
 
+    print('#### combined image size ####')
+    print(combined_image_size)
+    print()
+    print('#### combined image size with database####')
+    print(combined_image_size + db_storage_used)
+
     #check if you are already ran out of storage
     if db_storage_used > max_storage_size:
         return None,"ran out of storage"
     
     # Check if the combined size of the uploaded files would exceed the user's available storage
-    if combined_image_size + db_storage_used > max_storage_size:
+    elif combined_image_size + db_storage_used > max_storage_size:
         return None, 'Cannot upload more than the maximum allowed storage'
 
     return True, combined_image_size

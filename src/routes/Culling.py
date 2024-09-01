@@ -4,7 +4,7 @@ from dependencies.core import DBSessionDep
 from config.security import validate_images_and_storage
 from model.User import User
 from model.FolderInS3 import FoldersInS3
-from schemas.cullingData import cullingData
+from schemas.ImageTaskData import ImageTaskData
 from dependencies.user import get_user
 from services.Culling.createFolderInS3 import create_folder_in_S3
 from config.settings import get_settings
@@ -35,23 +35,26 @@ s3_utils = S3Utils(aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
 @router.post('/create_directory/{dir_name}', status_code=status.HTTP_201_CREATED)
 async def create_directory(dir_name:str, request:Request,  db_session: DBSessionDep, user:User = Depends(get_user)):
     """
-    Creates a Root Directory in S3 for Image Organization
+    🗂️ **Create a Root Directory in S3 for Image Organization** 🗂️
 
-    This endpoint creates a root directory in the S3 bucket under the specified directory name. If 'Culling_Images' is passed as `dir_name`, additional subfolders such as `closed_eye_images_folder`, `blur_images_folder`, `duplicate_images_folder`, `fine_collection_folder`, and `images_before_cull_folder` will be created within it.
+    This endpoint helps you **organize your images** in S3 by creating a root directory with optional subfolders. 🌟 For instance, if you provide `Culling_Images` as the `dir_name`, it will automatically set up several useful subfolders such as:
+    - **`closed_eye_images_folder`** 👁️
+    - **`blur_images_folder`** 🌫️
+    - **`duplicate_images_folder`** 🔄
+    - **`fine_collection_folder`** 🎯
+    - **`images_before_cull_folder`** 🗑️
 
     ### Parameters:
-    - **dir_name**: The name of the root directory to be created in S3.
-    - **request**: The request object containing session details.
-    - **user**: The user making the request, obtained through dependency injection.
-    - **session**: The database session for executing queries.
+    - **`dir_name`** *(str)*: The name of the root directory to be created in S3. Specify the top-level directory name where your images will be organized.
+    - **`request`**: Contains session details required for authentication and execution.
+    - **`user`**: The user making the request, obtained through dependency injection to ensure authorized access.
+    - **`session`**: The database session used to execute queries for creating directories.
 
     ### Responses:
-    - **201 Created**: The root directory and subfolders have been successfully created.
-    - **500 Internal Server Error**: If there is an error during the folder creation process.
-
-    ### Example Usage:
-    Send a POST request with the desired directory name to organize images within S3.
+    - 🎉 **201 Created**: **Success!** The root directory and its subfolders have been created successfully.
+    - ⚠️ **500 Internal Server Error**: **Error!** Something went wrong during the folder creation process. This might be due to issues with S3 or database access.
     """
+
     user_id = request.session.get('user_id')
     if not user_id:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='unauthorized access !')   
@@ -74,31 +77,28 @@ async def create_directory(dir_name:str, request:Request,  db_session: DBSession
 @router.post('/upload-images/{folder}', status_code=status.HTTP_202_ACCEPTED)
 async def upload_images(request: Request, folder: str, db_session: DBSessionDep, images: list[UploadFile] = File(...), user: User = Depends(get_user)):
     """
-    Uploads Images to S3 and Initiates Background Culling Task
+    📸 **Upload Images to S3 and Initiate Background Culling Task** 📸
 
-    This endpoint processes a list of images, uploads them to the specified folder in the AWS S3 bucket, and generates their URLs. The URLs are then sent to a Celery task that performs image culling in the background.
+    This endpoint efficiently **handles image uploads** to S3 and kicks off a background process for image culling. It manages the upload of images to a specified S3 folder and then generates and sends their URLs to a Celery task for further processing. This background task will handle image culling asynchronously, ensuring a smooth user experience.
 
     ### Parameters:
-    - **folder**: The name of the folder in S3 where the images will be uploaded.
-    - **images**: A list of images to be uploaded.
-    - **session**: The database session for executing queries.
-    - **user**: The user making the request, obtained through dependency injection.
-    - **request**: The request object containing session details.
+    - **`folder`** *(str)*: 🗂️ The name of the destination folder in S3 where the images will be stored.
+    - **`images`** *(list[UploadFile])*: 🖼️ A collection of images to be uploaded. Ensure the images meet size and format requirements.
+    - **`session`**: 🗃️ The database session used for executing queries related to image and folder validation.
+    - **`user`**: 👤 The user making the request, obtained through dependency injection to ensure authorized access.
+    - **`request`**: 🧾 Contains session details necessary for authentication.
 
     ### Workflow:
-    1. **Folder Validation**: The specified folder is verified to ensure it exists in the culling module.
-    2. **Image and Storage Validation**: The images are validated for size and format, and the storage usage is checked to ensure it does not exceed the user's limit.
-    3. **Upload to S3**: Valid images are uploaded to S3, and metadata is updated in the database.
-    4. **Task Dispatch**: The images' URLs are passed to a Celery task for background culling.
+    1. **🔍 Folder Validation**: Verifies if the specified folder exists within the culling module. Ensures proper placement of images.
+    2. **⚖️ Image and Storage Validation**: Checks the images for correct size and format. Confirms that storage usage remains within the user’s allowed limits.
+    3. **☁️ Upload to S3**: Uploads the validated images to S3 and updates their metadata in the database.
+    4. **🛠️ Task Dispatch**: Sends the URLs of the uploaded images to a Celery task for background culling. This process includes actions such as face extraction and embedding preparation.
 
     ### Responses:
-    - **202 Accepted**: The images have been accepted for processing, and a culling task has been initiated.
-    - **404 Not Found**: If the specified folder is not found.
-    - **415 Unsupported Media Type**: If the images are invalid or exceed the storage limit.
-    - **500 Internal Server Error**: If an unexpected error occurs during processing.
-
-    ### Example Usage:
-    Send a POST request with a list of images to upload them to the specified folder and initiate the culling task.
+    - 🎉 **202 Accepted**: Your images are successfully accepted for processing. The culling task has been initiated and will run in the background.
+    - ❓ **404 Not Found**: The specified folder does not exist. Please check the folder name.
+    - 📉 **415 Unsupported Media Type**: The images provided are invalid or exceed the allowed size/storage limits.
+    - ⚠️ **500 Internal Server Error**: An unexpected error occurred during the processing. This could be due to issues with S3, the database, or the task dispatching system.
     """
     try:
         
@@ -171,30 +171,29 @@ async def upload_images(request: Request, folder: str, db_session: DBSessionDep,
 
 
 @router.post('/start_culling/', status_code=status.HTTP_102_PROCESSING, response_model=None)
-async def start_culling(request: Request, culling_data: cullingData, db_session: DBSessionDep, user: User = Depends(get_user)):
+async def start_culling(request: Request, culling_data: ImageTaskData, db_session: DBSessionDep, user: User = Depends(get_user)):
     """
-    Initiates the Image Culling Process
+    🔄 **Initiates the Image Culling Process** 🔄
 
-    This endpoint starts the image culling process by sending image URLs and related information to a background task managed by Celery. The culling task processes images in the specified folder for the current user.
+    This endpoint kicks off the **image culling process** by sending image URLs and related data to a background task managed by Celery. The task processes the images located in the specified folder for the current user.
 
     ### Parameters:
-    - **request**: The request object containing session details.
-    - **culling_data**: The data required for culling, including the folder name and a list of image URLs to process.
-    - **session**: The database session used for querying and updating the database.
-    - **user**: The user making the request, obtained through dependency injection.
+    - **`request`** 🧾: The request object containing session details for authentication.
+    - **`culling_data`** 📂: Contains essential information for the culling task:
+    - **`folder_name`** 🗂️: The name of the folder where images are located.
+    - **`images_url`** 🌐: A list of image URLs to be processed.
+    - **`session`** 🗃️: The database session used for querying and updating database records.
+    - **`user`** 👤: The user making the request, obtained through dependency injection.
 
     ### Workflow:
-    1. **Folder Validation**: The specified folder is verified to ensure it exists in the culling module for the current user.
-    2. **Task Dispatch**: The images and other information are sent to a Celery task that handles the image culling process in the background.
-    3. **Response**: Returns a JSON response containing the task ID, which can be used to track the progress of the culling task.
+    1. **🔍 Folder Validation**: Checks if the specified folder exists in the culling module for the current user.
+    2. **🚀 Task Dispatch**: Sends image URLs and related data to a Celery task that handles image culling asynchronously.
+    3. **📬 Response**: Returns a JSON response with the task ID to track the progress of the culling process.
 
     ### Responses:
-    - **102 Processing**: The request has been accepted for processing, but the processing has not been completed.
-    - **404 Not Found**: If the specified folder is not found for the user in the culling module.
-    - **500 Internal Server Error**: If there is an error in sending the task to Celery.
-
-    ### Example Usage:
-    Send a POST request with the folder name and image URLs to start the culling process.
+    - 🕒 **102 Processing**: The request has been accepted and is being processed. The task is running in the background.
+    - ❓ **404 Not Found**: The specified folder does not exist for the user in the culling module.
+    - ⚠️ **500 Internal Server Error**: An unexpected error occurred when sending the task to Celery.
     """
     user_id = request.session.get("user_id")
     if not user_id:
@@ -225,27 +224,24 @@ async def get_folder_by_name(request:Request,folder: str, user:User = Depends(ge
 @router.delete("/delete-folder/{dir_name}")
 async def delete_folder(dir_name:str, request:Request, db_session: DBSessionDep, user:User = Depends(get_user)):
     """
-    Deletes a Folder from S3 and Removes its Record from the Database
+    🗑️ **Deletes a Folder from S3 and Removes its Record from the Database** 🗑️
 
-    This endpoint deletes a folder from the S3 bucket and removes its corresponding record from the database.
+    This endpoint performs a clean-up operation by deleting a specified folder from the S3 bucket and removing its record from the database.
 
     ### Parameters:
-    - **dir_name**: The name of the directory to be deleted.
-    - **request**: The request object containing session details.
-    - **session**: The database session for executing queries.
+    - **`dir_name`** 📁: The name of the directory to be deleted.
+    - **`request`** 🧾: The request object containing session details for authentication.
+    - **`session`** 🗃️: The database session used for executing queries.
 
     ### Workflow:
-    1. **Folder Path Construction**: Constructs the path of the folder to be deleted based on the user's ID and directory name.
-    2. **S3 Deletion**: Deletes the folder from S3.
-    3. **Database Update**: Removes the folder's record from the database.
+    1. **🔍 Folder Path Construction**: Builds the path of the folder to be deleted using the user's ID and the directory name.
+    2. **🗑️ S3 Deletion**: Deletes the folder and its contents from the S3 bucket.
+    3. **🗂️ Database Update**: Removes the corresponding folder's record from the database.
 
     ### Responses:
-    - **200 OK**: The folder has been successfully deleted from S3 and removed from the database.
-    - **404 Not Found**: If the folder or its record does not exist.
-    - **500 Internal Server Error**: If an error occurs during deletion.
-
-    ### Example Usage:
-    Send a DELETE request with the directory name to remove the folder and its metadata.
+    - ✅ **200 OK**: The folder has been successfully deleted from S3 and its record removed from the database.
+    - ❓ **404 Not Found**: The specified folder or its database record does not exist.
+    - ⚠️ **500 Internal Server Error**: An unexpected error occurred during the deletion process.
     """
 
     user_id = request.session.get('user_id')

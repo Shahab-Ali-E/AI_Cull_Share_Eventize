@@ -13,22 +13,19 @@ router = APIRouter(
 @router.get("/task_status/{task_id}")
 async def get_task_status(request:Request,task_id: str, user:User = Depends(get_user)):
     """
-    Retrieve the Status of a Background Culling Task
+    🔄 **Retrieve the Status of a Background Culling Task** 🔄
 
-    This endpoint returns the current status of a background culling task, identified by its task ID. The task status is streamed to the client in real-time using Server-Sent Events (SSE).
+    This endpoint allows you to check the current status of a background culling task using its unique task ID. The status is streamed to you in real-time via Server-Sent Events (SSE), keeping you updated as the task progresses.
 
     ### Parameters:
-    - **task_id**: The ID of the task whose status is being queried.
-    - **request**: The request object for checking connection status.
-    - **user**: The user making the request, obtained through dependency injection.
+    - **`task_id`** 🆔: The unique ID of the culling task whose status you want to check.
+    - **`request`** 🧾: The request object used to manage connection status.
+    - **`user`** 👤: The user making the request, provided through dependency injection.
 
     ### Responses:
-    - **200 OK**: The task status is streamed to the client in real-time.
-    - **404 Not Found**: If the task ID does not exist.
-    - **500 Internal Server Error**: If an error occurs while retrieving the task status.
-
-    ### Example Usage:
-    Send a GET request with the task ID to receive real-time updates on the task's progress.
+    - ✅ **200 OK**: Real-time updates on the task's status are successfully streamed to the client.
+    - ❓ **404 Not Found**: The specified task ID does not exist.
+    - ⚠️ **500 Internal Server Error**: An unexpected error occurred while retrieving the task status.
     """
     async def event_generator(task_id):
         while True:

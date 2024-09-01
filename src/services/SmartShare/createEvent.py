@@ -22,18 +22,10 @@ async def create_event_in_S3_and_DB(event_name:str, user_id:str, s3_utils_obj, d
                                         )
     
     except HTTPException as e:
-        db_session.rollback()
+        await db_session.rollback()
         raise e
     
     except Exception as e:
-        db_session.rollback()
-        # Rollback S3 operation if DB operation fails
-        try:
-            await s3_utils_obj.delete_object(folder_key=f'{user_id}/{event_name}')
-        except Exception as rollback_exception:
-            # Log the rollback failure and raise an error with details
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
-                                detail=f"Failed to save metadata in DB and rollback S3 operation failed: {str(rollback_exception)}. "
-                                       f"Original error: {str(e)}")
-        
+        await db_session.rollback()
+        await s3_utils_obj.delete_object(folder_key=f'{user_id}/{event_name}/')
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f'{str(e)}')
