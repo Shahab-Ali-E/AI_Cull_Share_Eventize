@@ -48,6 +48,10 @@ async def get_user(request: Request, db_session: DBSessionDep) :
             print()
             print(token.created_at)
             print()
+            if token.updated_at is None:
+                # Set updated_at to created_at or the current time if it's the user's first session
+                token.updated_at = token.created_at or current_time
+            
             session_duration = current_time - token.updated_at
             print(session_duration > MAX_SESSION_DURATION)
 

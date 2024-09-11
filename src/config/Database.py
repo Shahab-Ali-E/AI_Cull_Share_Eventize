@@ -1,4 +1,3 @@
-import asyncio
 from sqlalchemy.orm import declarative_base
 from config.settings import get_settings
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, AsyncConnection, async_sessionmaker

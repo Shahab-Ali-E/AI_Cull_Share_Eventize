@@ -1,8 +1,8 @@
-"""create User, Token, Image_meta_data, Folder_in_s3 tables
+"""create User, Token, Folder_In_S3, Images_Meta_data tables
 
-Revision ID: 1d53d589f964
+Revision ID: 448c2777f75a
 Revises: 
-Create Date: 2024-08-22 17:07:38.129115
+Create Date: 2024-09-11 18:02:55.194020
 
 """
 from typing import Sequence, Union
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = '1d53d589f964'
+revision: str = '448c2777f75a'
 down_revision: Union[str, None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -39,7 +39,7 @@ def upgrade() -> None:
     sa.Column('refresh_token', sa.String(), nullable=False),
     sa.Column('expires_at', sa.DateTime(timezone=True), nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
-    sa.Column('updated_at', sa.DateTime(timezone=True), nullable=False),
+    sa.Column('updated_at', sa.DateTime(timezone=True), nullable=True),
     sa.Column('user_id', sa.String(), nullable=False),
     sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id')
@@ -47,7 +47,7 @@ def upgrade() -> None:
     op.create_table('user_s3_folders',
     sa.Column('id', sa.BigInteger(), autoincrement=True, nullable=False),
     sa.Column('name', sa.String(), nullable=False),
-    sa.Column('created_at', sa.DateTime(), server_default=sa.text('now()'), nullable=False),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.Column('location_in_s3', sa.String(), nullable=False),
     sa.Column('total_size', sa.Integer(), nullable=False),
     sa.Column('module', sa.String(), nullable=False),
