@@ -1,11 +1,11 @@
 from datetime import datetime, timedelta, timezone
+from fastapi.responses import JSONResponse
 from authlib.integrations.starlette_client import OAuth, OAuthError
 from fastapi.responses import RedirectResponse
-from fastapi import Request
+from fastapi import Request, Response, status
 from sqlalchemy.ext.asyncio.session import AsyncSession
 from config.settings import get_settings
 from model.User import User , Token
-
 import logging
 from sqlalchemy.future import select
 
@@ -30,13 +30,30 @@ Oauth.register(
 )
 
 # Login
-async def google_login(request):
+async def google_login(request:Request, response:Response):
+    url = request.url_for('auth')
+
     user = request.session.get("user_id")
-    if not user:
-        url = request.url_for('auth')
+    print(user)
+    print('######')
+
+    #retreive cookies to check 
+    email_cookie = request.cookies.get('email')
+    name_cookie = request.cookies.get('name')
+
+    # Clear session and cookies if any frontend cookie is missing
+    if not email_cookie or not name_cookie:
+        request.session.pop('user_id', None)
+        response.delete_cookie(key="name")
+        response.delete_cookie(key="email")
+        response.delete_cookie(key="picture")
+        response.delete_cookie(key="session")
         return await Oauth.google.authorize_redirect(request, url, access_type="offline")
 
-    return RedirectResponse(url='/welcome')
+    if not user:
+        return await Oauth.google.authorize_redirect(request, url, access_type="offline")
+
+    return RedirectResponse(url=f'{settings.FRONTEND_HOST}/')
 
 # Redirect here for authentication and save the credential in DB
 async def google_auth(request: Request, db_session:AsyncSession):
@@ -94,5 +111,21 @@ async def google_auth(request: Request, db_session:AsyncSession):
 
     # Save the user_id in the session for token validation
     request.session['user_id'] = user_info['sub']
-    return RedirectResponse(url='/welcome')
+
+    #redirecting response to front end home page    
+    response =  RedirectResponse(f'{settings.FRONTEND_HOST}/')
+
+    # cookes will expire after session was out
+    cookesExpire = timedelta(hours=settings.MAX_SESSION_DURATION).total_seconds()
+
+    # Set tokens in cookies or send them in a secure manner
+    response.set_cookie(key='email', value=user_info['email'], httponly=False, samesite="none", secure=True, max_age=int(cookesExpire))
+    response.set_cookie(key='name', value=user_info['name'], httponly=False, samesite="none", secure=True, max_age=int(cookesExpire))
+    response.set_cookie(key='picture', value=user_info['picture'], httponly=False, samesite="none", secure=True, max_age=int(cookesExpire))
+
+    # Logging for debugging
+    logger.info(f"Set cookie: email={user_info['email']}, name={user_info['name']}, picture={user_info['picture']}")
+
+    # finally redirecting user   
+    return response
 

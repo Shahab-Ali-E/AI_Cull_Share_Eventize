@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     MAX_SMART_SHARE_MODULE_STORAGE:int = os.environ.get('MAX_SMART_SHARE_MODULE_STORAGE',100000000)
     
     # FrontEnd Application
-    FRONTEND_HOST: str = os.environ.get("FRONTEND_HOST", "http://localhost:3000")
+    FRONTEND_HOST: str = os.environ.get("FRONTEND_HOST", "http://127.0.0.1:3000")
 
     # MySql Database Config
     POSTGRES_HOST: str = os.environ.get("POSTGRES_HOST", 'localhost')

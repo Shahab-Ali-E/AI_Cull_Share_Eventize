@@ -1,3 +1,4 @@
+from typing import List
 from fastapi import APIRouter, HTTPException,status,Depends,UploadFile,File,Request
 from fastapi.responses import JSONResponse
 from dependencies.core import DBSessionDep
@@ -6,6 +7,7 @@ from model.User import User
 from model.FolderInS3 import FoldersInS3
 from schemas.ImageTaskData import ImageTaskData
 from dependencies.user import get_user
+from schemas.imageMetaDataResponse import CullingFolderMetaData
 from services.Culling.createFolderInS3 import create_folder_in_S3
 from config.settings import get_settings
 from services.Culling.deleteFolderFromS3 import delete_s3_folder_and_update_db
@@ -32,6 +34,29 @@ s3_utils = S3Utils(aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
                     aws_endpoint_url=settings.AWS_ENDPOINT_URL)
 
 
+
+@router.get("/get_all_folder", response_model=List[CullingFolderMetaData])
+async def get_all_folders(request:Request, db_session:DBSessionDep, user:User = Depends(get_user)):
+    user_id = request.session.get('user_id')
+    if not user_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='unauthorized access!')
+
+    async with db_session.begin():
+        try:
+            result =  (await db_session.scalars(select(FoldersInS3).where(FoldersInS3.module==settings.APP_SMART_CULL_MODULE)))
+            folders = result.all()
+            return folders
+        
+        except HTTPException as e:
+            raise HTTPException(status_code=e.status_code, detail=str(e))
+        except Exception as e:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)) 
+     
+
+@router.get("/folder/{folder_name}")
+async def get_folder_by_name(request:Request,folder: str, user:User = Depends(get_user)):
+    pass
+
 @router.post('/create_directory/{dir_name}', status_code=status.HTTP_201_CREATED)
 async def create_directory(dir_name:str, request:Request,  db_session: DBSessionDep, user:User = Depends(get_user)):
     """
@@ -57,7 +82,7 @@ async def create_directory(dir_name:str, request:Request,  db_session: DBSession
 
     user_id = request.session.get('user_id')
     if not user_id:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='unauthorized access !')   
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='unauthorized access!')   
     
     async with db_session.begin():
         try:
@@ -195,6 +220,7 @@ async def start_culling(request: Request, culling_data: ImageTaskData, db_sessio
     - ❓ **404 Not Found**: The specified folder does not exist for the user in the culling module.
     - ⚠️ **500 Internal Server Error**: An unexpected error occurred when sending the task to Celery.
     """
+    
     user_id = request.session.get("user_id")
     if not user_id:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='unauthorized access !') 
@@ -216,10 +242,6 @@ async def start_culling(request: Request, culling_data: ImageTaskData, db_sessio
 
     return JSONResponse({"task_id": task.id})
 
-
-@router.get("/folder/{folder_name}")
-async def get_folder_by_name(request:Request,folder: str, user:User = Depends(get_user)):
-    pass
 
 @router.delete("/delete-folder/{dir_name}")
 async def delete_folder(dir_name:str, request:Request, db_session: DBSessionDep, user:User = Depends(get_user)):

@@ -34,7 +34,8 @@ from config.Database import sessionmanager, Base
 from Celery.utils import create_celery
 from contextlib import asynccontextmanager 
 from dependencies.mlModelsManager import ModelManager
-
+from starlette.middleware.cors import CORSMiddleware 
+from starlette.middleware import Middleware
 
 settings = get_settings()
 
@@ -55,16 +56,32 @@ async def lifeSpan(app:FastAPI):
         await sessionmanager.close()
 
 
+# initalize and declare middlewares
+origins = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://0.0.0.0:3000"
+]
+middlewares = [
+    Middleware(
+        SessionMiddleware, 
+        secret_key=settings.APP_SECRET_KEY
+    ),
+    Middleware( 
+        CORSMiddleware,
+        allow_origins=origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"]
+    )
+]
 
 #init fastapi
-app = FastAPI(title=settings.APP_NAME, lifespan=lifeSpan)
+app = FastAPI(title=settings.APP_NAME, lifespan=lifeSpan, middleware=middlewares)
 
 #init celery
 app.celery_app = create_celery()
 celery = app.celery_app
-
-#adding middlewares
-app.add_middleware(SessionMiddleware, secret_key=settings.APP_SECRET_KEY)
 
 #adding routes here
 app.include_router(OAuth.router)

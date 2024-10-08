@@ -29,6 +29,8 @@ async def bulk_save(images_record:list):
     if not images_record:
         raise Exception('no images found to insert into database')
     
+    print("########### images record for bulk save###############")
+    print(images_record)
     async for db_session in get_db():
         async with db_session.begin():
             try:
@@ -164,6 +166,8 @@ def duplicate_image_separation(self, output_from_closed_eye:dict, user_id:str, f
 @celery.task(name='bulk_save_image_metadata', bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={'max_retries': 3}, queue='culling') 
 def bulk_save_image_metadata_db(self, culled_metadata:dict):
     try:
+        print('###############CULLED DATA #################')
+        print(culled_metadata)
         if culled_metadata.get('status') == 'error':
             raise Exception(images_metadata.get('message'))
         

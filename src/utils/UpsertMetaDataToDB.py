@@ -40,6 +40,7 @@ async def upsert_image_metadata_DB(db_session:AsyncSession, match_criteria:dict=
                 raise Exception('must provide "update_fields" and "match_criteria" to update record')
             
             condtion = [getattr(ImagesMetaData.ImagesMetaData, key) == value for key, value in match_criteria.items()]
+            
             # Check if the record exists
             existing_record = (await db_session.scalars(select(ImagesMetaData.ImagesMetaData).where(*condtion))).first()
             if not existing_record:
