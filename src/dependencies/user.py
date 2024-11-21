@@ -7,6 +7,7 @@ from config.settings import get_settings
 from model.User import User , Token
 from sqlalchemy.future import select
 from fastapi import Response
+from sqlalchemy.exc import SQLAlchemyError
 
 
 settings = get_settings()
@@ -15,16 +16,18 @@ MAX_SESSION_DURATION = timedelta(hours=settings.MAX_SESSION_DURATION)
 #----------------DEPENDENCY----------------
 # Dependency to get the current user and check if the session expires or if they are unauthorized
 async def get_user(request: Request, db_session: DBSessionDep, response: Response) :
-    try:
-        user_id = request.session.get('user_id')
-        if not user_id:
-            return None
+
+    user_id = request.session.get('user_id')
+    if not user_id:
+        print("executing 1st")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized access")
         
+    try:
         async with db_session as session:
             # Check if user_id exists in the database
             user = (await session.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
-            print(user)
             if not user:
+                request.session.clear()
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized access")
 
             # Retrieve the token for the user
@@ -85,9 +88,14 @@ async def get_user(request: Request, db_session: DBSessionDep, response: Respons
                 response.set_cookie(key='name', value=user.name, httponly=False, samesite="none", secure=True, max_age=int(cookies_expire))
                 response.set_cookie(key='picture', value=user.picture, httponly=False, samesite="none", secure=True, max_age=int(cookies_expire))
 
+    except SQLAlchemyError as e:
+        await db_session.rollback()
+        raise HTTPException(status_code=e.status_code, detail=str(e))
+    
     except Exception as e:
         await db_session.rollback()
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+    
     
     return user
 

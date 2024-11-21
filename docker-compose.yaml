@@ -1,7 +1,8 @@
 name: AI_CULL_SHARE_EVENTIZE
-version: ''
+
+
 services:
-  web:
+  backend:
     build: .
     env_file:
       - ./.env
@@ -11,24 +12,31 @@ services:
       - redis_dev
       - database_dev
       - rabbit_MQ_dev
+      - celery_dev
 
   database_dev:
-    image: postgres 16.4
+    image: postgres:16.4
     environment:
-      - POSTGRES_USER: ${POSTGRES_USER}
-      - POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      - POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
     ports:
       - 5432:5432
-  
+
+  celery_dev:
+    container_name: celery_worker
+    build: .
+    command: celery -A src.main.main.celery worker --loglevel=info --pool=solo
+    depends_on:
+      - redis_dev
+
   redis_dev:
-    image: redis 7.4
+    image: redis:7.4.1
     ports:
-      - 
-  
+      - 6379:6379
+
   rabbit_MQ_dev:
-    image: rabbitmq 3.13.7
+    image: rabbitmq:3-management
     ports:
       - 15672:15672
-  
-  celery_dev:
+      - 5672:5672

@@ -1,4 +1,3 @@
-from datetime import timezone
 from config.Database import Base
 from sqlalchemy import ForeignKey, DateTime, func
 from sqlalchemy.orm import relationship
@@ -9,7 +8,7 @@ from datetime import datetime
 if TYPE_CHECKING:
     from model.FolderInS3 import FoldersInS3
     from model.ImagesMetaData import ImagesMetaData
-
+   
 class User(Base):
     __tablename__ = "users"
     id: Mapped[str] = mapped_column(primary_key=True, index=True)
@@ -25,6 +24,7 @@ class User(Base):
     tokens: Mapped[List["Token"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     images: Mapped[List["ImagesMetaData"]] = relationship(back_populates="owner", cascade="all, delete-orphan")
     folders: Mapped[List["FoldersInS3"]] = relationship(back_populates="created_by", cascade="all, delete-orphan")
+   
 
 class Token(Base):
     __tablename__ = 'tokens'

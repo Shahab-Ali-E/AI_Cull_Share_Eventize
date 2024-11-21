@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta, timezone
 from io import BytesIO
 from fastapi import UploadFile, HTTPException,status
 from uuid import uuid4
@@ -5,10 +6,11 @@ from config.settings import get_settings
 from sqlalchemy.ext.asyncio import AsyncSession
 from utils.UpsertMetaDataToDB import upsert_folder_metadata_DB
 from utils.UpdateUserStorage import update_user_storage_in_db
-from sqlalchemy.exc import SQLAlchemyError
+from uuid import UUID
+
 settings = get_settings()
 
-async def pre_cull_image_processing(images:list[UploadFile], s3_utils, user_id:int, folder:str, db_session:AsyncSession, total_image_size:int):
+async def pre_cull_image_processing(images:list[UploadFile], s3_utils, user_id:int, folder:str, db_session:AsyncSession, total_image_size:int, folder_id:UUID, storage_used_by_folder=int):
     """
     Processes a list of images before culling, uploads them to an AWS S3 bucket, 
     and updates metadata and user storage in the database.
@@ -23,7 +25,8 @@ async def pre_cull_image_processing(images:list[UploadFile], s3_utils, user_id:i
     Returns:
     - A dictionary containing a message about the URL validity and the list of presigned URLs.
     """
-    uploaded_images_url =[]
+    presigned_image_record = []
+
     for image in images:
         filename = f'{uuid4()}_{image.filename}'
         
@@ -33,32 +36,7 @@ async def pre_cull_image_processing(images:list[UploadFile], s3_utils, user_id:i
         except Exception as e:
             raise HTTPException(status_code=400, detail=f"Error reading image file: {str(e)}")
         
-        #-----DATABASE OPERATION-----
-        try:
-            # Update the storage of the folder in the database
-            match_criteria = {"name": folder, "user_id": user_id, "module": settings.APP_SMART_CULL_MODULE}
-            await upsert_folder_metadata_DB(
-                db_session=db_session,
-                match_criteria=match_criteria,
-                update_fields={"total_size": total_image_size},
-                update=True
-            )
 
-            # Update the user's storage in the database    
-            is_valid, response = await update_user_storage_in_db(
-                db_session=db_session,
-                module=settings.APP_SMART_CULL_MODULE,
-                total_image_size=total_image_size,
-                user_id=user_id,
-                increment=True
-            )
-            if not is_valid:
-                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"{response}")
-        
-        except Exception as e:
-            await db_session.rollback()
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Database error: {str(e)}")
-        
         #------S3 OPERATION-----
         try:
             await s3_utils.upload_smart_cull_images(
@@ -70,13 +48,44 @@ async def pre_cull_image_processing(images:list[UploadFile], s3_utils, user_id:i
                                                     )
             key = f"{user_id}/{folder}/{settings.IMAGES_BEFORE_CULLING_STARTS_Folder}/{filename}"
             presigned_url = await s3_utils.generate_presigned_url(key, expiration=settings.PRESIGNED_URL_EXPIRY_SEC)
-            uploaded_images_url.append(presigned_url)
+
+            validity = (datetime.now(tz=timezone.utc) + timedelta(seconds=settings.PRESIGNED_URL_EXPIRY_SEC)).isoformat()
+            # Append the URL object to the list
+            presigned_image_record.append({"url": presigned_url, "validity":validity})
            
         except Exception as e:
-            await db_session.rollback()
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Error uploading image to S3: {str(e)}")
+        
+    #-----DATABASE OPERATION-----
+    try:
+        # updating folder storage
+        updated_folder_storage = storage_used_by_folder + total_image_size
+        
+        # Update the storage of the folder in the database
+        match_criteria = {"id":folder_id, "name": folder, "user_id": user_id, "module": settings.APP_SMART_CULL_MODULE}
+        await upsert_folder_metadata_DB(
+            db_session=db_session,
+            match_criteria=match_criteria,
+            update_fields={"total_size": updated_folder_storage, "temporary_images_urls":presigned_image_record},
+            update=True
+        )
+
+        # Update the user's storage in the database    
+        is_valid, response = await update_user_storage_in_db(
+            db_session=db_session,
+            module=settings.APP_SMART_CULL_MODULE,
+            total_image_size=total_image_size,
+            user_id=user_id,
+            increment=True
+        )
+        if not is_valid:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"{response}")
+
+    except Exception as e:
+        await db_session.rollback()
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Database error: {str(e)}")
    
     return {
         'message': f'URLs are valid for {settings.PRESIGNED_URL_EXPIRY_SEC} seconds',
-        'urls': uploaded_images_url
+        'data': presigned_image_record
     }

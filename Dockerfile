@@ -18,4 +18,7 @@ RUN poetry install
 #EXPOSE
 EXPOSE 8000
 
-CMD [ "poetry", "run", "uvicorn", "src.main.main:app", "--reload", ""]
+#env host
+ENV host=0.0.0.0
+
+CMD [ "poetry", "run", "uvicorn", "src.main.main:app", "--reload", "--host", "0.0.0.0","EXPOSE"]

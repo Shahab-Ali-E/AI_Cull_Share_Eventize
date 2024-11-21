@@ -87,7 +87,7 @@ class ClosedEyeDetection:
     # It will take single or bunch of images and upload them to S3 after making prediction
     async def separate_closed_eye_images_and_upload_to_s3(self, images:list, folder_id:int, task, prev_image_metadata:list=[]):
         open_eyes_images = []
-        closed_eye_metadata = prev_image_metadata
+        images_metadata = prev_image_metadata
         response = None
         total_img_len = len(images)
         for index, image in enumerate(images):
@@ -119,10 +119,11 @@ class ClosedEyeDetection:
                     key = f"{self.root_folder}/{self.inside_root_main_folder}/{self.upload_image_folder}/{filename}"
                     presigned_url = await self.S3.generate_presigned_url(key, expiration=settings.PRESIGNED_URL_EXPIRY_SEC)
 
-                    image_metadata = {
+                    metadata = {
                         'id': filename,
                         'name': img_name,
                         'download_path': presigned_url,
+                        'detection_status':'ClosedEye',
                         'file_type': image['content_type'],
                         'link_validity':datetime.now() + timedelta(seconds=settings.PRESIGNED_URL_EXPIRY_SEC),
                         'user_id': self.root_folder,
@@ -130,7 +131,7 @@ class ClosedEyeDetection:
                     }
 
                     #appending closed images metadata to and array
-                    closed_eye_metadata.append(image_metadata)
+                    images_metadata.append(metadata)
                     
                 else:
                     open_eyes_images.append(image)  # Append the image if eyes are open
@@ -141,12 +142,12 @@ class ClosedEyeDetection:
                 task.update_state(state='PROGRESS', meta={'progress': progress, 'info': 'Closed eye image separation processing'})
 
         response = 'closed eye' + response if response == 'image uploaded successfully' else response
-        task.update_state(state='PROGRESS', meta={'progress': 100, 'info': 'Duplicate image separation done!'})
+        task.update_state(state='SUCCESS', meta={'progress': 100, 'info': 'Closed eye image separation done!'})
         time.sleep(1)  
         return {
-            'status': 'success',
+            'status': 'SUCCESS',
             'open_eye_images': open_eyes_images,
-            'images_metadata':closed_eye_metadata,
+            'images_metadata':images_metadata,
             's3_response':response
         }
 

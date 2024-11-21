@@ -368,3 +368,21 @@ class S3Utils:
             return url
         except ClientError as e:
             raise HTTPException(f"Error generating presigned URL: {str(e)}")
+    
+    async def download_s3_folder(self, prefix):
+        loop = asyncio.get_running_loop()
+
+        try:
+            folder_list = await loop.run_in_executor(
+                self.executor,
+                lambda: self.client.list_objects_v2(Bucket=self.bucket_name, Prefix=prefix)
+            )
+            for contents in folder_list['Contents']:
+                all_folder_list = []
+                # if contents['Key'] 
+
+
+            return contents
+
+        except ClientError as e:
+            raise Exception(f"Error from s3: {str(e)}")

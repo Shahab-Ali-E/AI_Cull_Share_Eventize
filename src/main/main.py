@@ -26,6 +26,7 @@ transformers_logging.set_verbosity_error()
 
 
 from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.responses import RedirectResponse
 from config.settings import get_settings
@@ -89,6 +90,15 @@ app.include_router(OAuth.welcome_route)
 app.include_router(Culling.router)
 app.include_router(SmartShare.router)
 app.include_router(Task.router)
+
+# Define a global 500 error handler
+@app.exception_handler(500)
+async def internal_server_error_handler(request:Request, exc:Exception):
+    logging.error(f"Internal server error occurred: {exc}")
+    return JSONResponse(
+        status_code=500,
+        content={"message": "An unexpected error occurred. Please try again later."}
+    )
 
 @app.get('/')
 async def method_name(request: Request):

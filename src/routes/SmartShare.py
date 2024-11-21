@@ -4,7 +4,7 @@ from config.security import validate_images_and_storage
 from model.FolderInS3 import FoldersInS3
 from model.User import User
 from schemas.ImageTaskData import ImageTaskData
-from schemas.imageMetaDataResponse import ImageMetaDataResponse
+from schemas.ImageMetaDataResponse import ImageMetaDataResponse
 from dependencies.user import get_user
 from config.settings import get_settings
 from services.SmartShare.createEvent import create_event_in_S3_and_DB

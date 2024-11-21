@@ -1,15 +1,20 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, UUID4
 from datetime import datetime
 
+# Models for returning data
 class ImageMetaDataResponse(BaseModel):
+    id: UUID4
+    name: str
+    Bucket_folder: str
+    user_id: str
+    folder_id: int
+
+class PresingedUrlBeforeCullResponse(BaseModel):
+    url: str
+
+class CulledImagesMetadataResponse(BaseModel):
     id: str
     name: str
-    Bucket_folder:str
-    user_id: str
-    folder_id:int
-
-class CullingFolderMetaData(BaseModel):
-    id:int
-    name:str
-    created_at:datetime
-    total_size:int
+    file_type: str
+    download_path: str
+    link_validity: datetime

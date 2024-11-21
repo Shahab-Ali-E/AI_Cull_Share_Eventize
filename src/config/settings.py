@@ -28,7 +28,11 @@ class Settings(BaseSettings):
     POSTGRES_PASS: str = os.environ.get("POSTGRES_PASSWORD", None)
     POSTGRES_PORT: int = int(os.environ.get("POSTGRES_PORT", 5432))
     POSTGRES_DB: str = os.environ.get("POSTGRES_DB", None)
+    # Async URI for standard async operations
     DATABASE_URI: str = f"postgresql+asyncpg://{POSTGRES_USER}:%s@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}" % quote_plus(POSTGRES_PASS)
+
+    # Sync URI specifically for Celery synchronous tasks
+    SYNC_DATABASE_URI: str = f"postgresql://{POSTGRES_USER}:%s@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}" % quote_plus(POSTGRES_PASS)
 
     #QDRANT Database Config
     QDRANT_API_KEY:str = os.environ.get('QDRANT_API_KEY',None)

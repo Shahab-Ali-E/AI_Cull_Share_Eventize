@@ -42,7 +42,7 @@ async def separate_duplicate_images(images:list, root_folder:str, inside_root_ma
             embeddings_j = image_embeddings[j]['embeddings']
 
             cosine_similarity_result = cosine_similarity([embeddings_i], [embeddings_j])[0][0] * 100
-            #if image to be duplicate then
+            #if image to be duplicate then upload them to s3 and prepare their metadata
             if cosine_similarity_result > settings.BLUR_IMAGE_THRESHOLD:
                 for img_data in [image_embeddings[i], image_embeddings[j]]:
                     duplicate.add(img_data['name'])
@@ -68,6 +68,7 @@ async def separate_duplicate_images(images:list, root_folder:str, inside_root_ma
                         'name': img_data['name'],
                         'download_path': presigned_url,
                         'file_type': img_data['content_type'],
+                        'detection_status':'ClosedEye',
                         'link_validity':datetime.now() + timedelta(seconds=settings.PRESIGNED_URL_EXPIRY_SEC),
                         'user_id': root_folder,
                         'folder_id': folder_id
@@ -78,7 +79,7 @@ async def separate_duplicate_images(images:list, root_folder:str, inside_root_ma
             progress = round(33.3 + ((similarity_checks_done / total_similarity_checks) * 33.3), 2)
             task.update_state(state='PROGRESS', meta={'progress': progress, 'info': 'Duplicate image separation processing'})
 
-    #Lastly all good images uploaded to s3
+    #Lastly all good images uploaded to s3 and prepare it's metadata
     non_duplicate = [img_data for img_data in image_embeddings if img_data['name'] not in duplicate]        
     for index, img_data in enumerate(non_duplicate):
         filename = f"{uuid4()}__{img_data['name']}"
@@ -102,6 +103,7 @@ async def separate_duplicate_images(images:list, root_folder:str, inside_root_ma
             'id': filename,
             'name': img_data['name'],
             'download_path': presigned_url,
+            'detection_status':'FineCollection',
             'file_type': img_data['content_type'],
             'link_validity':datetime.now() + timedelta(seconds=settings.PRESIGNED_URL_EXPIRY_SEC),
             'user_id': root_folder,
@@ -114,9 +116,9 @@ async def separate_duplicate_images(images:list, root_folder:str, inside_root_ma
             task.update_state(state='PROGRESS', meta={'progress': progress, 'info': 'Duplicate image separation processing'})
             print(progress)
 
-    task.update_state(state='PROGRESS', meta={'progress': 100, 'info': 'Duplicate image separation done!'})
+    task.update_state(state='SUCCESS', meta={'progress': 100, 'info': 'Duplicate image separation done!'})
     time.sleep(1)
     return {
-        'status': 'success',
+        'status': 'SUCCESS',
         'images_metadata':all_images_metadata,
     }
