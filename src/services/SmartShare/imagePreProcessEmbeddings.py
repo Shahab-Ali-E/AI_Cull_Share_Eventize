@@ -6,6 +6,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from config.settings import get_settings
 from utils.UpsertMetaDataToDB import upsert_folder_metadata_DB, insert_image_metadata
 from utils.UpdateUserStorage import update_user_storage_in_db
+from model.SmartShareFolders import SmartShareFolder
+from model.SmartShareImagesMetaData import SmartShareImagesMetaData
 
 settings = get_settings()
 
@@ -53,31 +55,26 @@ async def preprocess_image_before_embedding(event_name:str, images:list, s3_util
         img_data = {
                         'id': filename,
                         'name': image.filename,
-                        'download_path': presigned_url,
                         'file_type': image.content_type,
-                        'link_validity':datetime.now() + timedelta(seconds=settings.PRESIGNED_URL_EXPIRY_SEC),
-                        'user_id': user_id,
-                        'folder_id': folder_id
+                        'images_download_path': presigned_url,
+                        'images_download_validity':datetime.now() + timedelta(seconds=settings.PRESIGNED_URL_EXPIRY_SEC),
+                        'smart_share_folder_id': folder_id
                     }
 
         images_metadata.append(img_data)
     
     if images_metadata:
         try:
-            db_response = await insert_image_metadata(
-                                                     db_session=db_session,
-                                                     bulk_insert_fields=images_metadata,                
-                                                    )
-               
-            if not db_response:
-                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Error saving images meta data to database")
+            inserting_images = [SmartShareImagesMetaData(**data) for data in images_metadata]
+            db_session.add_all(inserting_images)
     
             #updating the storage of folder in database
-            match_criteria = {"name": event_name, "user_id": user_id, "module":settings.APP_SMART_SHARE_MODULE}
+            match_criteria = {"name": event_name, "user_id": user_id}
             folder_meta_data = await upsert_folder_metadata_DB(
                                                                 db_session=db_session,
                                                                 match_criteria=match_criteria,
                                                                 update_fields={"total_size":total_image_size},
+                                                                model=SmartShareFolder,
                                                                 update=True
                                                             )
             if not folder_meta_data:
@@ -96,8 +93,6 @@ async def preprocess_image_before_embedding(event_name:str, images:list, s3_util
             return {
                 'message': f'URLs are valid for {settings.PRESIGNED_URL_EXPIRY_SEC} seconds',
                 'urls': uploaded_images_url,
-                'storage_update':response,
-                'folder_date':folder_meta_data
             }
 
         except HTTPException as e:

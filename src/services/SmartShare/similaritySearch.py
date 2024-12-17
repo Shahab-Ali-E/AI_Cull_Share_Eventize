@@ -1,5 +1,5 @@
 from sqlalchemy.ext.asyncio import AsyncSession
-from model.ImagesMetaData import ImagesMetaData
+from model.CullingImagesMetaData import ImagesMetaData
 from fastapi import HTTPException,status
 from sqlalchemy.future import select
 

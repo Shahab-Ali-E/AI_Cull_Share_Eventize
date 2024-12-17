@@ -16,11 +16,18 @@ def create_celery():
     celery_app.conf.update(result_serializer='pickle')
     celery_app.conf.update(accept_content=['pickle', 'json'])
     celery_app.conf.update(result_expires=200)
-    celery_app.conf.update(broker_heartbeat=10)
-    celery_app.conf.update(broker_connection_timeout=30)
+
+    # timeout and heartbeat settings
+    celery_app.conf.update(broker_heartbeat=60)
+    celery_app.conf.update(broker_connection_timeout=120)
+
+    # Worker-related settings
+    celery_app.conf.update(worker_max_tasks_per_child=10) # will retart after 10 task so if any task won't let the resource free it will help in that case
+    celery_app.conf.update(worker_concurrency=4) # 4 task can run at same time
+
+    # Other useful settings
     celery_app.conf.update(result_persistent=True)
     celery_app.conf.update(worker_send_task_events=False)
-    celery_app.conf.update(worker_prefetch_multiplier=1)
     celery_app.conf.update(broker_connection_retry_on_startup=True)
     celery_app.conf.update(imports=['src.services.SmartShare.tasks','src.services.Culling.tasks'])
 

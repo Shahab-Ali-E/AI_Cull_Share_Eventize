@@ -66,12 +66,11 @@ async def separate_duplicate_images(images:list, root_folder:str, inside_root_ma
                     image_metadata = {
                         'id': filename,
                         'name': img_data['name'],
-                        'download_path': presigned_url,
+                        'images_download_path': presigned_url,
                         'file_type': img_data['content_type'],
                         'detection_status':'ClosedEye',
-                        'link_validity':datetime.now() + timedelta(seconds=settings.PRESIGNED_URL_EXPIRY_SEC),
-                        'user_id': root_folder,
-                        'folder_id': folder_id
+                        'images_download_validity':datetime.now() + timedelta(seconds=settings.PRESIGNED_URL_EXPIRY_SEC),
+                        'culling_folder_id': folder_id
                     }
                     all_images_metadata.append(image_metadata)
             # Update progress for cosine similarity computation
@@ -102,12 +101,11 @@ async def separate_duplicate_images(images:list, root_folder:str, inside_root_ma
         image_metadata = {
             'id': filename,
             'name': img_data['name'],
-            'download_path': presigned_url,
+            'images_download_path': presigned_url,
             'detection_status':'FineCollection',
             'file_type': img_data['content_type'],
-            'link_validity':datetime.now() + timedelta(seconds=settings.PRESIGNED_URL_EXPIRY_SEC),
-            'user_id': root_folder,
-            'folder_id': folder_id
+            'images_download_validity':datetime.now() + timedelta(seconds=settings.PRESIGNED_URL_EXPIRY_SEC),
+            'culling_folder_id': folder_id
         }
         all_images_metadata.append(image_metadata)
         # Update progress for good image uploading

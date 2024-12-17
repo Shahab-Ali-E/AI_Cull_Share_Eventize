@@ -3,7 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import UploadFile, HTTPException,status
 from config.settings import get_settings
 import torch
-from model.ImagesMetaData import ImagesMetaData
+from model.CullingImagesMetaData import ImagesMetaData
 from services.SmartShare.extractFace import extract_face
 from utils.generateEmeddings import generate_embeddings
 import torch

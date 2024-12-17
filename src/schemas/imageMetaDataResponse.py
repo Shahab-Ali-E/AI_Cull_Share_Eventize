@@ -16,5 +16,5 @@ class CulledImagesMetadataResponse(BaseModel):
     id: str
     name: str
     file_type: str
-    download_path: str
-    link_validity: datetime
+    images_download_path: str
+    images_download_validity: datetime

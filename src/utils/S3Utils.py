@@ -1,4 +1,5 @@
 import boto3
+from boto3.s3.transfer import TransferConfig
 from botocore.exceptions import ClientError
 from fastapi import HTTPException,status
 from concurrent.futures import ThreadPoolExecutor
@@ -20,9 +21,16 @@ class S3Utils:
             endpoint_url=aws_endpoint_url,
             region_name=aws_region,
             aws_access_key_id=aws_access_key_id,
-            aws_secret_access_key=aws_secret_access_key
+            aws_secret_access_key=aws_secret_access_key,
+            config=boto3.session.Config(max_pool_connections=50)
         )
         self.bucket_name = bucket_name
+        self.transfer_config = TransferConfig(
+                                                multipart_threshold=1024 * 1024* 5,  # 5 mb
+                                                max_concurrency=10,                  # 10 threads
+                                                multipart_chunksize=1024 *1024 * 5, # 5 mb chunks
+                                                use_threads=True                     # Multi-threading enabled
+                                            )
         self.executor = ThreadPoolExecutor()
     
     #It check if that folder already exsists which you want to create
@@ -251,7 +259,8 @@ class S3Utils:
             lambda:self.client.upload_fileobj(
                 image_data,
                 self.bucket_name,
-                f'{upload_image_folder}{filename}'
+                f'{upload_image_folder}{filename}',
+                Config=self.transfer_config
             )
         )
 

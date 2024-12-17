@@ -9,9 +9,12 @@ from alembic import context
 
 
 from config.settings import get_settings
-from model.FolderInS3 import FoldersInS3
-from model.User import User,Token
-from model.ImagesMetaData import ImagesMetaData
+from model.CullingFolders import CullingFolder
+from model.SmartShareFolders import SmartShareFolder
+from model.SmartShareImagesMetaData import SmartShareImagesMetaData
+from model.User import User
+from model.CullingImagesMetaData import ImagesMetaData, TemporaryImageURL
+from model.EventArrangmentForm import EventArrangmentForm
 from config.Database import Base
 
 # this is the Alembic Config object, which provides

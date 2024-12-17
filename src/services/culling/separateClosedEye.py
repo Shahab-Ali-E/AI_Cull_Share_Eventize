@@ -65,7 +65,8 @@ class ClosedEyeDetection:
     # To predict whether eye is closed or not in a single face
     async def predict_eye_state(self, face_image):
         prediction = self.model.predict(face_image)
-        return 'closed' if prediction[0][0] < 0.5 else 'open'
+        print('closed' if prediction[0][0] < 0.6 else 'open')
+        return 'closed' if prediction[0][0] < 0.6 else 'open'
 
     # It will process a single image and return how many faces in it were closed or open
     async def process_image(self, raw_image):
@@ -122,12 +123,11 @@ class ClosedEyeDetection:
                     metadata = {
                         'id': filename,
                         'name': img_name,
-                        'download_path': presigned_url,
                         'detection_status':'ClosedEye',
                         'file_type': image['content_type'],
-                        'link_validity':datetime.now() + timedelta(seconds=settings.PRESIGNED_URL_EXPIRY_SEC),
-                        'user_id': self.root_folder,
-                        'folder_id': folder_id
+                        'images_download_path': presigned_url,
+                        'images_download_validity':datetime.now() + timedelta(seconds=settings.PRESIGNED_URL_EXPIRY_SEC),
+                        'culling_folder_id': folder_id
                     }
 
                     #appending closed images metadata to and array

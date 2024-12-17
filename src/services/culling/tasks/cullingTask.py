@@ -1,5 +1,6 @@
 import asyncio
 import time
+from model.CullingImagesMetaData import ImagesMetaData, TemporaryImageURL
 from services.Culling.separateBlurImages import separate_blur_images
 from config.settings import get_settings
 from services.Culling.separateClosedEye import ClosedEyeDetection
@@ -10,8 +11,8 @@ from utils.CustomExceptions import SignatureDoesNotMatch, URLExpiredException, U
 from utils.S3Utils import S3Utils
 from Celery.utils import create_celery
 import requests
-from sqlalchemy import select, text
-from model.FolderInS3 import FoldersInS3
+from sqlalchemy import delete, select
+from model.CullingFolders import CullingFolder
 from celery import chain
 
 
@@ -35,24 +36,30 @@ def bulk_save(images_record: list, folder_id:str):
         with celery_sync_session() as db_session:
             response = insert_image_metadata(
                 db_session=db_session,
-                bulk_insert_fields=images_record
+                bulk_insert_fields=images_record,
+                model=ImagesMetaData
             )
             if response.get('status') == 'COMPLETED':
-                folder = db_session.scalar(select(FoldersInS3).where(
-                    FoldersInS3.id == folder_id,
+                folder = db_session.scalar(select(CullingFolder).where(
+                    CullingFolder.id == folder_id,
                 ))
-                # Check if user exists
+                
+                # Check if folder exists
                 if folder:
+                    # updating folder data
                     folder.culling_done = True
-                    folder.temporary_images_urls = []
                     folder.culling_in_progress = False
                     
-                    db_session.add(folder)
-                    db_session.commit()
+                    # deleting temp images record
+                    db_session.execute(delete(TemporaryImageURL).where(
+                        TemporaryImageURL.culling_folder_id == folder_id
+                    ))
                 else:
-
                     # Handle case where user is not found, e.g., log an error or raise an exception
                     print(f"folder with id {folder} not found.")
+                
+                    
+                db_session.commit()
                 return response
 
     except Exception as e:
@@ -245,7 +252,6 @@ def culling_task(self, user_id:str, uploaded_images_url, folder:str, folder_id:s
             closed_eye_separation.s(user_id, folder, folder_id),
             duplicate_image_separation.s(user_id, folder, folder_id),
             bulk_save_image_metadata_db.s(folder_id),
-            # del_before_cull_images.s()
         ) 
 
         result = chain_result.apply_async()

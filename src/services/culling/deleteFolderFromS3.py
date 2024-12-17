@@ -1,6 +1,6 @@
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from model.FolderInS3 import FoldersInS3
+from model.CullingFolders import CullingFolder
 from utils.UpdateUserStorage import update_user_storage_in_db
 from sqlalchemy.future import select
 
@@ -32,9 +32,8 @@ async def delete_s3_folder_and_update_db(del_folder_path: str, db_session: Async
     # Extract folder name from the S3 path
     folder_name = del_folder_path.split('/')[-2]
     # Retrieve folder metadata from the database
-    folder_data = (await db_session.scalars(select(FoldersInS3).where(FoldersInS3.name == folder_name,
-                                                                      FoldersInS3.module == module,
-                                                                      FoldersInS3.user_id == user_id))).first()
+    folder_data = (await db_session.scalars(select(CullingFolder).where(CullingFolder.name == folder_name,
+                                                                      CullingFolder.user_id == user_id))).first()
 
     # Raise an error if the folder is not found in the database
     if not folder_data:

@@ -30,13 +30,14 @@ from fastapi.responses import JSONResponse
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.responses import RedirectResponse
 from config.settings import get_settings
-from routes import OAuth, Culling, SmartShare, Task
-from config.Database import sessionmanager, Base
+from routes import OAuth, Culling, SmartShare, Task, Dashboard, EventArrangment
+from config.Database import sessionmanager
 from Celery.utils import create_celery
 from contextlib import asynccontextmanager 
 from dependencies.mlModelsManager import ModelManager
 from starlette.middleware.cors import CORSMiddleware 
 from starlette.middleware import Middleware
+from fastapi.staticfiles import StaticFiles
 
 settings = get_settings()
 
@@ -84,11 +85,17 @@ app = FastAPI(title=settings.APP_NAME, lifespan=lifeSpan, middleware=middlewares
 app.celery_app = create_celery()
 celery = app.celery_app
 
+# added static files director
+project_root = os.path.dirname(os.path.abspath(__file__))
+app.mount("/static",StaticFiles(directory="static"), name="static" )
+
 #adding routes here
 app.include_router(OAuth.router)
 app.include_router(OAuth.welcome_route)
+app.include_router(Dashboard.router)
 app.include_router(Culling.router)
 app.include_router(SmartShare.router)
+app.include_router(EventArrangment.router)
 app.include_router(Task.router)
 
 # Define a global 500 error handler

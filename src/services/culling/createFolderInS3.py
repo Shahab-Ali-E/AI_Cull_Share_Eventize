@@ -1,7 +1,7 @@
 from config.settings import get_settings
 from fastapi import HTTPException,status
 from utils.UpsertMetaDataToDB import upsert_folder_metadata_DB
-from model.FolderInS3 import FoldersInS3
+from model.CullingFolders import CullingFolder
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
@@ -11,9 +11,8 @@ async def create_folder_in_S3(dir_name:str, s3_utils_obj, db_session:AsyncSessio
     
     #checking if that folder already exsists in Database
     try:
-        folder_exists = (await db_session.scalars(select(FoldersInS3).where(FoldersInS3.name == dir_name,
-                                                                            FoldersInS3.module == settings.APP_SMART_CULL_MODULE,
-                                                                            FoldersInS3.user_id == user_id
+        folder_exists = (await db_session.scalars(select(CullingFolder).where(CullingFolder.name == dir_name,
+                                                                            CullingFolder.user_id == user_id
                                                                             ))).first()
 
         if folder_exists:
@@ -36,13 +35,14 @@ async def create_folder_in_S3(dir_name:str, s3_utils_obj, db_session:AsyncSessio
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f'sadsdasd{str(e)}')
     
     #save metadata to DB of created folder in S3
-    folder_loc_in_s3 = f'{settings.AWS_BUCKET_SMART_CULL_NAME}/{user_id}/{dir_name}'
-    match_criteria = {"name": dir_name, "user_id": user_id, "module":settings.APP_SMART_CULL_MODULE, 'location_in_s3':folder_loc_in_s3}
+    folder_path_in_s3 = f'{settings.AWS_BUCKET_SMART_CULL_NAME}/{user_id}/{dir_name}'
+    match_criteria = {"name": dir_name, "user_id": user_id, 'path_in_s3':folder_path_in_s3}
     try:
         await upsert_folder_metadata_DB(db_session=db_session,
-                                        match_criteria=match_criteria
+                                        match_criteria=match_criteria,
+                                        model=CullingFolder
                                         )
     except Exception as e:
         await s3_utils_obj.delete_object(folder_key=f'{user_id}/{dir_name}/')
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f'343434{str(e)}')
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f'{str(e)}')
 

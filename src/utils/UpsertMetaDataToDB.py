@@ -1,14 +1,14 @@
 from sqlalchemy import insert
-from model import FolderInS3, ImagesMetaData
 from fastapi import HTTPException,status
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 from sqlalchemy.future import select
-from typing import Dict, List
+from typing import Dict, List, Type
+from sqlalchemy.orm import DeclarativeMeta
 
 
-def insert_image_metadata(db_session: Session, bulk_insert_fields: List[Dict]) -> dict:
+def insert_image_metadata(db_session: Session, bulk_insert_fields: List[Dict], model:Type[DeclarativeMeta]) -> dict:
     """
     Inserts new image metadata records into the database.
 
@@ -28,7 +28,7 @@ def insert_image_metadata(db_session: Session, bulk_insert_fields: List[Dict]) -
         raise Exception('no object found in "bulk_insert_fields" to insert')
 
     try:
-        new_records = [ImagesMetaData.ImagesMetaData(**record) for record in bulk_insert_fields]
+        new_records = [model(**record) for record in bulk_insert_fields]
         db_session.bulk_save_objects(new_records)
         return {
             "status": "COMPLETED",
@@ -40,7 +40,7 @@ def insert_image_metadata(db_session: Session, bulk_insert_fields: List[Dict]) -
         raise Exception(f"Error inserting image metadata: {str(e)}")
 
 
-async def update_image_metadata(db_session: AsyncSession, match_criteria: Dict, update_fields: Dict) -> dict:
+async def update_image_metadata(db_session: AsyncSession, match_criteria: Dict, update_fields: Dict, model:Type[DeclarativeMeta]) -> dict:
     """
     Updates an existing image metadata record in the database.
 
@@ -65,8 +65,8 @@ async def update_image_metadata(db_session: AsyncSession, match_criteria: Dict, 
         raise Exception('must provide "update_fields" and "match_criteria" to update record')
 
     try:
-        condition = [getattr(ImagesMetaData.ImagesMetaData, key) == value for key, value in match_criteria.items()]
-        existing_record = (await db_session.scalars(select(ImagesMetaData.ImagesMetaData).where(*condition))).first()
+        condition = [getattr(model, key) == value for key, value in match_criteria.items()]
+        existing_record = (await db_session.scalars(select(model).where(*condition))).first()
 
         if not existing_record:
             raise Exception("No image found to update.")
@@ -82,7 +82,7 @@ async def update_image_metadata(db_session: AsyncSession, match_criteria: Dict, 
         raise Exception(f"Error updating image metadata: {str(e)}")
     
 
-async def upsert_folder_metadata_DB(db_session: AsyncSession, match_criteria: dict, update_fields: dict = None, update=False): 
+async def upsert_folder_metadata_DB(db_session: AsyncSession, match_criteria: dict, model:Type[DeclarativeMeta], update_fields: dict = None, update=False): 
     """
     Save or update folder metadata in the database.
 
@@ -116,8 +116,8 @@ async def upsert_folder_metadata_DB(db_session: AsyncSession, match_criteria: di
             raise Exception('must provide "match_criteria" to insert or update record')
         
         # Build the where clause using SQLAlchemy expressions
-        conditions = [getattr(FolderInS3.FoldersInS3, key) == value for key, value in match_criteria.items()]
-        existing_record = (await db_session.scalars(select(FolderInS3.FoldersInS3).where(*conditions))).first()
+        conditions = [getattr(model, key) == value for key, value in match_criteria.items()]
+        existing_record = (await db_session.scalars(select(model).where(*conditions))).first()
         
         if update:
             if not update_fields:
@@ -134,7 +134,7 @@ async def upsert_folder_metadata_DB(db_session: AsyncSession, match_criteria: di
                 raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Folder already with name {existing_record.name} already found")
             
             # Create a new record
-            new_record = FolderInS3.FoldersInS3(**match_criteria)
+            new_record = model(**match_criteria)
             existing_record = new_record
         
         db_session.add(existing_record)

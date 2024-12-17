@@ -1,27 +1,37 @@
-from fastapi import APIRouter, HTTPException,status,Depends,UploadFile,File,Request
+from datetime import datetime, timezone
+import logging
+from typing import List, Optional
+from uuid import UUID
+
+from fastapi import (APIRouter, Depends, File, HTTPException, Query, Request,
+                     UploadFile, status, Form)
 from fastapi.responses import JSONResponse
+from sqlalchemy import asc, desc
+from sqlalchemy.future import select
+
 from config.security import validate_images_and_storage
-from model.FolderInS3 import FoldersInS3
-from model.User import User
-from schemas.ImageTaskData import ImageTaskData
-from schemas.ImageMetaDataResponse import ImageMetaDataResponse
-from dependencies.user import get_user
 from config.settings import get_settings
+from dependencies.core import DBSessionDep
+from dependencies.user import get_user
+from model.SmartShareFolders import SmartShareFolder
+from model.SmartShareImagesMetaData import SmartShareImagesMetaData
+from model.User import User
+from schemas.FolderMetaDataResponse import CreateEventSchema, EventsMetaData
+from schemas.ImageMetaDataResponse import ImageMetaDataResponse
+from schemas.ImageTaskData import ImageTaskData
 from services.SmartShare.createEvent import create_event_in_S3_and_DB
 from services.SmartShare.deleteEvent import delete_event_s3_db_collection
 from services.SmartShare.getImagesByFaceRecog import get_images_by_face_recog
-from services.SmartShare.imagePreProcessEmbeddings import preprocess_image_before_embedding
+from services.SmartShare.imagePreProcessEmbeddings import \
+    preprocess_image_before_embedding
 from services.SmartShare.tasks.imageShareTask import image_share_task
+from services.SmartShare.updateEvent import update_event_details
 from utils.QdrantUtils import QdrantUtils
 from utils.S3Utils import S3Utils
-from typing import List
-from dependencies.core import DBSessionDep
-from sqlalchemy.future import select
- 
-
+from utils.UpsertMetaDataToDB import upsert_folder_metadata_DB
 
 router = APIRouter(
-    prefix='/smart-share',
+    prefix='/smart_share',
     tags=['smart image share'],
 )
 
@@ -37,8 +47,232 @@ s3_utils = S3Utils(aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
 qdrant_util = QdrantUtils()
 
 
-@router.post('/create-event/{event_name}', status_code=status.HTTP_201_CREATED)
-async def create_event(event_name:str, request:Request, db_session:DBSessionDep, user:User = Depends(get_user)):
+@router.get("/get_all_events", response_model=List[EventsMetaData])
+async def get_all_events(
+    request:Request, 
+    db_session:DBSessionDep, 
+    user:User = Depends(get_user),
+    limit: int = Query(10, ge=1, le=100, description="Limit number of events to retrieve"),
+    offset: int = Query(0, ge=0, description="Number of events to skip"),
+    search: Optional[str] = Query(None, description="Search by event name"),
+    sort_by: Optional[str] = Query("created_date", description="Sort by size, name, or created_date"),
+    sort_order: Optional[str] = Query("asc", description="Sort order: asc or desc")
+
+    ):
+    """
+    📅 **Retrieve All Events** 📅
+
+    Fetch a list of events stored in the system for the authenticated user. The endpoint supports advanced capabilities like pagination, sorting, and filtering.
+
+    ### Parameters:
+    - **`limit`** *(int, optional)*: Maximum number of events to retrieve (default: `10`). Must be between `1` and `100`.
+    - **`offset`** *(int, optional)*: Number of events to skip from the beginning of the result set (default: `0`).
+    - **`search`** *(str, optional)*: Filter events by name. Returns events containing the specified substring in their name.
+    - **`sort_by`** *(str, optional)*: Sort events by a specific field. Supported values:
+      - `size`: Sort by event size.
+      - `name`: Sort by event name.
+      - `created_date` (default): Sort by event creation date.
+    - **`sort_order`** *(str, optional)*: Sort order. Supported values:
+      - `asc`: Ascending (default).
+      - `desc`: Descending.
+
+    ### Authentication:
+    - Requires the user to be authenticated. The `user` parameter ensures authorized access.
+
+    ### Responses:
+    - 📃 **200 OK**: Returns a list of events based on the provided parameters.
+      ```json
+      [
+          {
+              "id": 1,
+              "name": "Event 1",
+              "size": 12345,
+              "created_date": "2024-12-01T12:00:00Z"
+          },
+          ...
+      ]
+      ```
+    - ⚠️ **401 Unauthorized**: The user is not authorized to access this resource.
+      ```json
+      {
+          "detail": "Unauthorized access!"
+      }
+      ```
+    - ⚠️ **500 Internal Server Error**: An unexpected error occurred.
+      ```json
+      {
+          "detail": "An error message describing the issue."
+      }
+      ```
+
+    ### Example Usage:
+    - **Retrieve the first 10 events sorted by name in descending order:**
+      ```
+      GET /get_all_events?limit=10&offset=0&sort_by=name&sort_order=desc
+      ```
+
+    - **Search for events with "conference" in the name:**
+      ```
+      GET /get_all_events?search=conference
+      ```
+
+    - **Paginate through results (retrieve the next 10 events):**
+      ```
+      GET /get_all_events?limit=10&offset=10
+      ```
+    """
+
+    user_id = user.get('id')
+    if not user_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='Unauthorized access!')
+
+    # Base query
+    query = select(SmartShareFolder).where(
+        SmartShareFolder.user_id == user_id
+    )
+
+    # Apply search filter if provided
+    if search:
+        query = query.where(SmartShareFolder.name.ilike(f"%{search}%"))
+
+    # Sorting logic
+    if sort_by == "size":
+        order_by_column = SmartShareFolder.total_size
+    elif sort_by == "name":
+        order_by_column = SmartShareFolder.name
+    else:
+        order_by_column = SmartShareFolder.created_at
+
+    # Sorting direction
+    query = query.order_by(desc(order_by_column) if sort_order == "desc" else asc(order_by_column))
+
+    # Apply pagination
+    query = query.limit(limit).offset(offset)
+
+    async with db_session.begin():
+        try:
+            result = await db_session.scalars(query)
+            events = result.all()
+
+            return events
+        
+        except Exception as e:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+        
+
+
+@router.get("/get_event_by_id/{event_id}")
+async def get_event_by_id(
+    request: Request,
+    db_session: DBSessionDep,
+    event_id: UUID,
+    user: User = Depends(get_user)
+):
+    """
+    📁 **Retrieve a Specific Event by ID** 📁
+
+    This endpoint allows you to **fetch details of a specific event** using its unique identifier (`event_id`). It returns event data associated with the authenticated user, ensuring secure access to event details and their associated images.
+
+    ### Parameters:
+    - **`event_id`** *(UUID)*: The unique identifier of the event you wish to retrieve.
+    - **`request`**: Contains session details required for authentication and execution.
+    - **`user`**: The user making the request, obtained through dependency injection to ensure authorized access.
+    - **`db_session`**: The database session used to execute queries for fetching event and image data.
+
+    ### Responses:
+    - 📃 **200 OK**: **Success!** Event details and associated images (if valid) are returned.
+      ```json
+      {
+          "id": "uuid",
+          "name": "Event Name",
+          "created_at": "2024-12-08T12:00:00Z",
+          "total_size": 102400,
+          "images_data": [
+              {
+                  "url": "image_url_1",
+                  "validity": "2024-12-09T12:00:00Z"
+              },
+              ...
+          ]
+      }
+      ```
+    - ⚠️ **401 Unauthorized**: The user is not authorized to access this event.
+      ```json
+      {
+          "detail": "Unauthorized access!"
+      }
+      ```
+    - ⚠️ **404 Not Found**: The event with the specified ID does not exist.
+      ```json
+      {
+          "detail": "Event with id {event_id} not found!"
+      }
+      ```
+    - ⚠️ **500 Internal Server Error**: An unexpected error occurred while fetching the event.
+      ```json
+      {
+          "detail": "An error message describing the issue."
+      }
+      ```
+
+    ### Example Usage:
+    - **Get Event by ID:**
+      ```
+      GET /get_event_id/{event_id}
+      ```
+
+    ### Notes:
+    - The user can only access events associated with their own account, ensuring data security.
+    - If event images have expired (based on `images_download_validity`), they will not be included in the response.
+    """
+
+    user_id = user.get('id') #"user_2pqOmYikrXY1pWefuBuqzRGm3vA"
+    if not user_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='Unauthorized access!')
+
+    async with db_session.begin():
+        try:
+            # Query to get the folder by ID and user ID
+            event = await db_session.scalar(
+                select(SmartShareFolder).where(
+                    SmartShareFolder.id == event_id,
+                    SmartShareFolder.user_id == user_id,
+                )
+            )
+
+            # Check if event exists
+            if event is None:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f'Event with id {event_id} not found!')
+            
+            # Query to get the images of the specific event
+            images_data = (await db_session.scalars(select(SmartShareImagesMetaData).where(SmartShareImagesMetaData.smart_share_folder_id == event_id))).all()
+            images_urls = []
+            for data in images_data:
+                validity_time =data.images_download_validity
+                current_time = datetime.now(timezone.utc)
+                
+                if current_time < validity_time:         
+                        images_urls.append({"url":data.images_download_path, "validity":validity_time})
+               
+            return {
+                "id":event.id,
+                "name":event.name,
+                "cover_image":event.cover_image,
+                "description":event.description,
+                "created_at":event.created_at,
+                "total_size":event.total_size,
+                "images_data":images_urls,
+            }
+
+        except HTTPException as e:
+            raise HTTPException(status_code=e.status_code, detail=str(e))
+        except Exception as e:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+
+
+@router.post('/create_event/{event_name}', status_code=status.HTTP_201_CREATED)
+async def create_event(event_name:str, request:Request, db_session:DBSessionDep, user: User = Depends(get_user), event_cover_image: UploadFile = File(None)):
     """
     🎉 **Create a New Event** 🎉
 
@@ -55,14 +289,45 @@ async def create_event(event_name:str, request:Request, db_session:DBSessionDep,
     - 🟠 **500 Internal Server Error**: **Uh-oh!** Something went wrong on our end. Please try again later.
     """
 
-    user_id = request.session.get('user_id')
+    user_id = user.get('id')
     if not user_id:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='unauthorized access')
+    
+    # Validate image file
+    if event_cover_image:
+        if not event_cover_image.content_type.startswith("image/"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="File must be an image"
+            )
+        if event_cover_image.size < 0 or event_cover_image.size > 2 * 1024 * 1024:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Image size must be between 0 and 2 MB",
+            )
     try:
         async with db_session.begin():
-            response = await create_event_in_S3_and_DB(event_name=event_name.lower().strip(), user_id=user_id, s3_utils_obj=s3_utils, db_session=db_session)
+            s3_response, db_response = await create_event_in_S3_and_DB(event_name=event_name.lower().strip(), event_cover_image=event_cover_image, user_id=user_id, s3_utils_obj=s3_utils, db_session=db_session)
+            
+            if s3_response !=None or db_response.get("status") != "COMPLETED":
+                raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail= f"S3 response {s3_response} db_response {db_response}") 
+            
+            # Try to create the collection at Qdrant
+            try:
+                qdrant_response = qdrant_util.create_collection(collection_name=event_name.lower().strip(), vector_size=500)
+            except Exception as e:
+                # Rollback DB changes in case of error while creating Qdrant collection
+                await db_session.rollback()
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Error creating collection at Qdrant: {str(e)}"
+                )
+            
             await db_session.commit()
-            return response
+            return {
+                's3_response': s3_response,
+                'database_response': db_response,
+                'collection_created': qdrant_response
+            }
     
     except HTTPException as e:
         await db_session.rollback()
@@ -73,8 +338,8 @@ async def create_event(event_name:str, request:Request, db_session:DBSessionDep,
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 
-@router.post('/upload-images/{folder}', status_code=status.HTTP_202_ACCEPTED)
-async def upload_images(request: Request, event_name: str, db_session:DBSessionDep, images: list[UploadFile] = File(...), user: User = Depends(get_user)):
+@router.post('/upload_images/{event_id}', status_code=status.HTTP_202_ACCEPTED)
+async def upload_images(request: Request, event_id: str, db_session:DBSessionDep, images: list[UploadFile] = File(...), user: User = Depends(get_user)):
     """
     📸 **Upload Images to a Specified Folder** 📸
 
@@ -96,20 +361,18 @@ async def upload_images(request: Request, event_name: str, db_session:DBSessionD
     - 🟠 **500 Internal Server Error**: **Something went wrong!** An unexpected error occurred during the upload process.
     """
 
-    user_id = request.session.get("user_id")
+    user_id = user.get('id')
     if not user_id:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='unauthorized access')
-    event_name = event_name.lower().strip()
 
     try:
         async with db_session.begin():
             # Checking if that folder exists in the database or not
-            folder_data = (await db_session.scalars(select(FoldersInS3).where(FoldersInS3.name == event_name,
-                                                                    FoldersInS3.module == settings.APP_SMART_SHARE_MODULE,
-                                                                    FoldersInS3.user_id == user_id
+            folder_data = (await db_session.scalars(select(SmartShareFolder).where(SmartShareFolder.id == event_id,
+                                                                    SmartShareFolder.user_id == user_id
                                                                     ))).first()
             if not folder_data:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f'Could not find folder with {event_name} in smart share')
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f'Could not find event: {event_id}')
 
             # Validation if combined size of images is greater than available size and check image validation
             storage_used = (await db_session.scalar(select(User.total_image_share_storage_used).where(User.id == user_id)))#user storage
@@ -117,7 +380,6 @@ async def upload_images(request: Request, event_name: str, db_session:DBSessionD
                                                                 files=images, 
                                                                 max_uploads=100, 
                                                                 max_size_mb=10,
-                                                                max_storage_size=settings.MAX_SMART_SHARE_MODULE_STORAGE,
                                                                 db_storage_used=storage_used
                                                                 )
             if not is_valid:
@@ -125,7 +387,7 @@ async def upload_images(request: Request, event_name: str, db_session:DBSessionD
             
             try:
                 #uplaoding image to s3, updating meta data in database and return presinged url
-                response  = await preprocess_image_before_embedding(event_name=event_name,
+                response  = await preprocess_image_before_embedding(event_name=folder_data.name,
                                                                     images=images,
                                                                     s3_utils=s3_utils,
                                                                     db_session=db_session,
@@ -177,24 +439,23 @@ async def share_images(event_data:ImageTaskData, request:Request, db_session:DBS
     """
 
 
-    user_id = request.session.get("user_id")
-    event_name = event_data.folder_name.lower().strip()
+    user_id = user.get('id')
+    event_id = event_data.folder_id
     urls = event_data.images_url
     try:
         async with db_session.begin():
         # Checking if that folder exists in the database or not
-            folder_data = (await db_session.scalars(select(FoldersInS3).where(FoldersInS3.name == event_name,
-                                                                    FoldersInS3.module == settings.APP_SMART_SHARE_MODULE,
-                                                                    FoldersInS3.user_id == user_id
+            folder_data = (await db_session.scalars(select(SmartShareFolder).where(SmartShareFolder.id == event_id,
+                                                                    SmartShareFolder.user_id == user_id
                                                                     ))).first()
         if not folder_data:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f'Could not find event with {event_name} in smart share')
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f'Could not find event: {event_id}')
         
         if not urls:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f'image url not provided !')
         
         #Sending images URL and other info to Celery task     
-        task = image_share_task.apply_async(args=[user_id, urls, event_name ])
+        task = image_share_task.apply_async(args=[user_id, urls, folder_data.name ])
         
         return JSONResponse({"task_id": task.id})
     
@@ -208,14 +469,13 @@ async def share_images(event_data:ImageTaskData, request:Request, db_session:DBS
 
 @router.post('/get_images',status_code=status.HTTP_200_OK, response_model=List[ImageMetaDataResponse])
 async def get_images(event_name:str, request:Request, db_session:DBSessionDep, image: UploadFile = File(...), user:User = Depends(get_user)):
-    user_id = request.session.get('user_id')
+    user_id = user.get('id')
     if not user_id:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='unauthorized access')
     
     async with db_session.begin():
-        folder_data = (await db_session.scalars(select(FoldersInS3).where(FoldersInS3.name == event_name,
-                                                                    FoldersInS3.module == settings.APP_SMART_SHARE_MODULE,
-                                                                    FoldersInS3.user_id == user_id))).first()
+        folder_data = (await db_session.scalars(select(SmartShareFolder).where(SmartShareFolder.name == event_name,
+                                                                    SmartShareFolder.user_id == user_id))).first()
     
     if not folder_data:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f'Could not find event with {event_name} in smart share')
@@ -239,8 +499,42 @@ async def get_images(event_name:str, request:Request, db_session:DBSessionDep, i
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 
+    
+@router.patch('/update_event/{event_id}', status_code=status.HTTP_202_ACCEPTED)
+async def update_event(
+    event_id: str, 
+    db_session: DBSessionDep, 
+    description:str = Form(None), 
+    cover_image: UploadFile = File(None), 
+):
+    user_id = "user_2pqOmYikrXY1pWefuBuqzRGm3vA"  # Replace with actual user logic
+    logging.info(f"Description: {description}")
+    logging.info(f"Cover Image: {cover_image.filename if cover_image else None}")
+    try:
+        async with db_session.begin():
+            # Update event details
+            response = await update_event_details(
+                db_session=db_session, 
+                description=description, 
+                cover_image=cover_image, 
+                event_id=event_id, 
+                user_id=user_id
+            )
+            await db_session.commit()
+
+        return {"update_event_data": response}
+
+    except HTTPException as e:
+        await db_session.rollback()
+        raise e
+
+    except Exception as e:
+        await db_session.rollback()
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+
 @router.delete('/delete_event/{event_name}', status_code=status.HTTP_200_OK)
-async def delete_event(event_name:str, request:Request, db_session:DBSessionDep, user:User = Depends(get_user)):
+async def delete_event(event_name:str, request:Request, db_session:DBSessionDep):
     """
     🗑️ **Delete an Event and Its Associated Data** 🗑️
 
@@ -261,24 +555,61 @@ async def delete_event(event_name:str, request:Request, db_session:DBSessionDep,
     - 🔴 **401 Unauthorized**: **Access Denied!** You need to be authenticated to perform this operation.
     - 🟠 **500 Internal Server Error**: **Oops!** An unexpected error occurred. This could be due to issues with the database, S3, or Qdrant.
     """
-    user_id = request.session.get('user_id')
+    user_id = "user_2pqOmYikrXY1pWefuBuqzRGm3vA"#user.get('id')
     if not user_id:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='unauthorized access')
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='Unauthorized access')
 
     try:
         async with db_session.begin():
-            response = await delete_event_s3_db_collection(db_session=db_session,
-                                          event_name=event_name,
-                                          qdrant_util_obj=qdrant_util,
-                                          s3_utils_obj=s3_utils,
-                                          user_id=user_id
-                                          )
+            # Call to delete event from S3 and database
+            s3_response, db_response = await delete_event_s3_db_collection(
+                db_session=db_session,
+                event_name=event_name,
+                s3_utils_obj=s3_utils,
+                user_id=user_id
+            )
+            
+            print("####### s3 response #####")
+            print()
+            print(s3_response)
+            print("######### db response ########")
+            print()
+            print(db_response)
+
+            # Check if the deletion failed for either S3 or the database
+            if db_response.get("message") != "success" or s3_response.get("message") != "Objects deleted successfully":
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"S3 Response: {s3_response}, DB Response: {db_response}"
+                )
+
+            # Try to remove the collection from Qdrant
+            try:
+                qdrant_response = qdrant_util.remove_collection(collection_name=event_name)
+            except Exception as e:
+                # Rollback DB changes in case of error while removing Qdrant collection
+                await db_session.rollback()
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Error removing collection from Qdrant: {str(e)}"
+                )
+
+            # Commit all changes if successful
             await db_session.commit()
-            return response
+
+            return {
+                's3_response': s3_response,
+                'database_response': db_response,
+                'collection_deleted': qdrant_response
+            }
+
     except HTTPException as e:
+        # Rollback DB changes if HTTPException occurs
         await db_session.rollback()
-        raise HTTPException(status_code=e.status_code, detail=str(e))
+        raise HTTPException(status_code=e.status_code, detail=e.detail)
 
     except Exception as e:
+        # Rollback DB changes for any other exception
         await db_session.rollback()
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+

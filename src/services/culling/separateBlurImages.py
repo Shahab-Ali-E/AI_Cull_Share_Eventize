@@ -72,12 +72,11 @@ async def separate_blur_images(images:list, root_folder:str, inside_root_main_fo
             image_metadata = {
                 'id': filename,
                 'name': image['name'],
-                'download_path': presigned_url,
                 'file_type': image['content_type'],
                 'detection_status':'Blur',
-                'link_validity':datetime.now() + timedelta(seconds=settings.PRESIGNED_URL_EXPIRY_SEC),
-                'user_id': root_folder,
-                'folder_id': folder_id
+                'images_download_path': presigned_url,
+                'images_download_validity':datetime.now() + timedelta(seconds=settings.PRESIGNED_URL_EXPIRY_SEC),   
+                'culling_folder_id': folder_id
             }
             blurred_metadata.append(image_metadata)
         else:

@@ -38,6 +38,10 @@ class Settings(BaseSettings):
     QDRANT_API_KEY:str = os.environ.get('QDRANT_API_KEY',None)
     QDRANT_ENDPOINT_URL:str = os.environ.get('QDRANT_ENDPOINT_URL',None)
 
+    # Clerk secret key
+    CLERK_SECRET_KEY:str = os.environ.get('CLERK_SECRET_KEY',None)
+    CLERK_JWKS_URL:str = os.environ.get('CLERK_JWKS_URL',None)
+    CLERK_ISSUER:str = os.environ.get('CLERK_ISSUER',None)
     # encoded_password:str = quote_plus(POSTGRES_PASS)#Propely encode password due @ is a special symbol symbol
     # DATABASE_URI: str = f"postgresql://{POSTGRES_USER}:{encoded_password}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}"
 

@@ -1,9 +1,13 @@
-from pydantic import BaseModel,EmailStr
+from pydantic import BaseModel,EmailStr, Field
 
-class   UserResponse(BaseModel):
+class UserResponse(BaseModel):
     id:str
-    name:str
+    user_name:str=Field(default="Anonymous")
     email:EmailStr
-    picture:str
+    profile_image_url:str
     total_culling_storage_used: int
     total_image_share_storage_used: int
+
+
+class SignUpResponse(UserResponse):
+    status:str
