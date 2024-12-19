@@ -7,6 +7,9 @@ import torch
 class ModelManager:
     _models = None
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    print()
+    print()
+    print("device",device)
 
     @staticmethod #this decoretor allow us to do not create instance of class we can call this function by just class name
     def get_models(settings):
@@ -21,7 +24,8 @@ class ModelManager:
         blur_detect_model = ViTForImageClassification.from_pretrained(settings.BLUR_VIT_MODEL, from_tf=True).to(ModelManager.device)
         feature_extractor = ViTFeatureExtractor.from_pretrained(settings.FEATURE_EXTRACTOR)
         #closed eye detection loading
-        closed_eye_detection_model = load_model(settings.CLOSED_EYE_DETECTION_MODEL)
+        # closed_eye_detection_model = load_model(settings.CLOSED_EYE_DETECTION_MODEL)
+        closed_eye_detection_model = ViTForImageClassification.from_pretrained(settings.CLOSED_EYE_DETECTION_MODEL, from_tf=True).to(ModelManager.device)
         # Initialize processor and model for embeddings
         embedding_img_processor = CLIPImageProcessor.from_pretrained(settings.FACE_EMBEDDING_GENERATOR_MODEL)
         embedding_model = CLIPModel.from_pretrained(settings.FACE_EMBEDDING_GENERATOR_MODEL).to(ModelManager.device)

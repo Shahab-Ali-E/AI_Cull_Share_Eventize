@@ -115,7 +115,7 @@ async def separate_duplicate_images(images:list, root_folder:str, inside_root_ma
             print(progress)
 
     task.update_state(state='SUCCESS', meta={'progress': 100, 'info': 'Duplicate image separation done!'})
-    time.sleep(1)
+    # time.sleep(1)
     return {
         'status': 'SUCCESS',
         'images_metadata':all_images_metadata,

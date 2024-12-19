@@ -89,7 +89,7 @@ async def separate_blur_images(images:list, root_folder:str, inside_root_main_fo
             
     response = 'Blur ' + response if response == 'image uploaded successfully' else response
     task.update_state(state='SUCCESS', meta={'progress': 100, 'info': 'Blur image separation done!'})
-    time.sleep(1)
+    # time.sleep(1)
     return {
             'status': 'SUCCESS',
             'non_blur_images': non_blur_images,

@@ -1,5 +1,6 @@
 from config.settings import get_settings
 from fastapi import HTTPException,status
+from utils.CustomExceptions import FolderAlreadyExistsException
 from utils.UpsertMetaDataToDB import upsert_folder_metadata_DB
 from model.CullingFolders import CullingFolder
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -31,8 +32,17 @@ async def create_folder_in_S3(dir_name:str, s3_utils_obj, db_session:AsyncSessio
                                                         duplicate_img_folder=settings.DUPLICATE_FOLDER,
                                                         fine_collection_img_folder=settings.FINE_COLLECTION_FOLDER
                                                     )
+    
+    # if it already exsists in the s3 then we will delete it, for only in those case if the s3 folder metadata was not found in our database
+    except FolderAlreadyExistsException as e:
+        try:
+            await s3_utils_obj.delete_object(folder_key=f'{user_id}/{dir_name}/')
+            
+        except Exception as e:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f'{str(e)}')
+        
     except Exception as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f'sadsdasd{str(e)}')
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f'{str(e)}')
     
     #save metadata to DB of created folder in S3
     folder_path_in_s3 = f'{settings.AWS_BUCKET_SMART_CULL_NAME}/{user_id}/{dir_name}'

@@ -101,7 +101,7 @@ def get_images_from_aws(self, uploaded_images_url:list):
             time.sleep(0.1)
         
     self.update_state(state='SUCCESS', meta={"progress": 100, "info": "Images retrieved successfully"})
-    time.sleep(0.8)
+    # time.sleep(0.8)
     
     return images
 
@@ -133,7 +133,7 @@ def closed_eye_separation(self, output_from_blur:dict, user_id:str, folder:str, 
 
     if len(non_blur_images)==0 and len(images_metadata)!=0:
         self.update_state(state='SUCCESS', meta={'progress': 100, 'info': "Closed eye images separation completed!"})
-        time.sleep(1)
+        # time.sleep(1)
         return {
             'status': 'closed_eye_warning',
             'message': "No images were found to detect closed eye, only blurred images were processed.",
@@ -170,10 +170,10 @@ def duplicate_image_separation(self, output_from_closed_eye:dict, user_id:str, f
     if output_from_closed_eye.get('status')=='SUCCESS':
         if not output_from_closed_eye.get('open_eye_images') and output_from_closed_eye.get('images_metadata'):
             self.update_state(state='SUCCESS', meta={'progress': 100, 'info': "Duplicate images separation completed!"})
-            time.sleep(1)
+            # time.sleep(1)
             return {
                 'status': 'duplicate_images_warning',
-                'message': "No images were found to detect duplicate, only closed eye and blurred images were processed.",
+                'message': "No images were found to detect duplicate, only closed eye and blurred images are processed.",
                 'images_metadata': output_from_closed_eye.get('images_metadata')
             }
         
@@ -213,7 +213,7 @@ def bulk_save_image_metadata_db(self, culled_metadata: dict, folder_id:str):
         if images_to_save:
             response = bulk_save(images_record=images_to_save, folder_id=folder_id)
             self.update_state(state='SUCCESS', meta={'progress': 100, 'info': "Images save to database successfully!"})
-            time.sleep(1)
+            # time.sleep(1)
             return response
 
         return {

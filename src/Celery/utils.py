@@ -18,9 +18,12 @@ def create_celery():
     celery_app.conf.update(result_expires=200)
 
     # timeout and heartbeat settings
-    celery_app.conf.update(broker_heartbeat=60)
-    celery_app.conf.update(broker_connection_timeout=120)
-
+    # celery_app.conf.update(broker_heartbeat=None)
+    celery_app.conf.update(broker_connection_timeout=3600) # Broker connection timeout in seconds
+    
+    # Prevents timeout errors during lengthy interactions with Redis for storing or retrieving task results
+    celery_app.conf.update( redis_socket_timeout=7200) # Set to 2 hours for long-running tasks
+    celery_app.conf.update(redis_socket_keepalive=True)  # Keep the Redis connection alive
     # Worker-related settings
     celery_app.conf.update(worker_max_tasks_per_child=10) # will retart after 10 task so if any task won't let the resource free it will help in that case
     celery_app.conf.update(worker_concurrency=4) # 4 task can run at same time

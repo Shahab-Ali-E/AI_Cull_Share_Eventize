@@ -5,6 +5,8 @@ from fastapi import HTTPException,status
 from concurrent.futures import ThreadPoolExecutor
 import asyncio
 
+from utils.CustomExceptions import FolderAlreadyExistsException
+
 class S3Utils:
     """
     Initializes the S3Utils class with AWS credentials and bucket information.
@@ -193,7 +195,7 @@ class S3Utils:
             self.create_object(root_folder)
         
         if await self.folder_exists(main_folder):
-            raise Exception(f'Main folder "{main_folder}" already exists.')
+            raise FolderAlreadyExistsException(f'Main folder "{main_folder}" already exists.')
         else:
             await self.create_object(main_folder)
 

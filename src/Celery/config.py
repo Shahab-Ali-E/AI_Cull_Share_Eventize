@@ -29,6 +29,8 @@ class BaseConfig:
     CELERY_TASK_ROUTES = (route_task,)
 
 
+
+
 class DevelopmentConfig(BaseConfig):
     pass
 
