@@ -65,7 +65,7 @@ async def separate_blur_images(images:list, root_folder:str, inside_root_main_fo
             except Exception as e:
                 raise Exception(f"Error uploading image to S3: {str(e)}")
             
-            #generating presinged url so user can download image
+            # generating presinged url so user can download image
             key = f"{root_folder}/{inside_root_main_folder}/{upload_image_folder}/{filename}"
             presigned_url = await S3_util_obj.generate_presigned_url(key, expiration=settings.PRESIGNED_URL_EXPIRY_SEC)
 

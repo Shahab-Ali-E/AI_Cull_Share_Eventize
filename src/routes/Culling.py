@@ -47,7 +47,6 @@ s3_utils = S3Utils(aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
 
 @router.get("/get_all_folder", response_model=List[CullingFolderMetaData])
 async def get_all_folders(
-    request:Request, 
     db_session:DBSessionDep, 
     user:User = Depends(get_user),
     limit: int = Query(10, ge=1, le=100, description="Limit number of folders to retrieve"),
@@ -68,13 +67,12 @@ async def get_all_folders(
         - **`search`** *(str, optional)*: A string to filter folders by name. Returns only those folders whose names contain the specified substring.
         - **`sort_by`** *(str, optional)*: The field by which to sort the results. Acceptable values are `size`, `name`, and `created_date`. Defaults to `created_date`.
         - **`sort_order`** *(str, optional)*: The order in which to sort the results. Specify `asc` for ascending or `desc` for descending order. Defaults to `asc`.
-        - **`request`**: Contains session details required for authentication and execution.
         - **`user`**: The user making the request, obtained through dependency injection to ensure authorized access.
-        - **`session`**: The database session used to execute queries for fetching folders.
+        - **`db_session`**: The database session used to execute queries for fetching folders.
 
         ### Responses:
         - 📃 **200 OK**: **Success!** A list of folders is returned based on the provided parameters.
-        - ⚠️ **401 Unauthorized**: **Error!** The user is not authorized to access this resource.
+        - ⚠️ **401 Unauthorized or 403 Forbidden**: **Error!** The user is not authorized to access this resource.
         - ⚠️ **500 Internal Server Error**: **Error!** An unexpected error occurred while fetching folders.
     """
 
@@ -82,7 +80,7 @@ async def get_all_folders(
     if not user_id:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='Unauthorized access!')
 
-    # Base query
+    # Base query to fetch all folders
     query = select(CullingFolder).where(
         CullingFolder.user_id == user_id
     )
@@ -339,7 +337,7 @@ async def create_directory(dir_name:str, request:Request,  db_session: DBSession
 
 
 @router.post('/upload_images/{folder_id}', status_code=status.HTTP_202_ACCEPTED)
-async def upload_images(request: Request, folder_id: str, db_session: DBSessionDep, images: list[UploadFile] = File(...), user: User = Depends(get_user)):
+async def upload_images(request: Request, folder_id: str, db_session: DBSessionDep,user: User = Depends(get_user), images: list[UploadFile] = File(...)):
     """
     📸 **Upload Images to S3 and Initiate Background Culling Task** 📸
 
@@ -365,7 +363,8 @@ async def upload_images(request: Request, folder_id: str, db_session: DBSessionD
     - ⚠️ **500 Internal Server Error**: An unexpected error occurred during the processing. This could be due to issues with S3, the database, or the task dispatching system.
     """
     try:
-        user_id = user.get('id')
+        # user_id = user.get('id')
+        user_id='asdasda'
         if not user_id:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized access!")
 
@@ -455,7 +454,7 @@ async def upload_images(request: Request, folder_id: str, db_session: DBSessionD
 
 # user: User = Depends(get_user)
 @router.post('/start_culling/', status_code=status.HTTP_102_PROCESSING, response_model=None)
-async def start_culling(request: Request, culling_data: ImageTaskData, db_session: DBSessionDep):
+async def start_culling(request: Request, culling_data: ImageTaskData, db_session: DBSessionDep, user: User = Depends(get_user)):
     """
     🔄 **Initiates the Image Culling Process** 🔄
 

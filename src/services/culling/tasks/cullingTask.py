@@ -108,6 +108,12 @@ def get_images_from_aws(self, uploaded_images_url:list):
 #This task is used to separate blur images and upload them to aws server and finally return non-blur images, blur images metadata
 @celery.task(name='blur_image_separation', bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={'max_retries':3}, queue='culling')
 def blur_image_separation(self, images, user_id:str, folder:str, folder_id:int):
+    
+    print()
+    print()
+    print()
+    print("total images received", len(images))
+    
     # Validation
     if not folder or not folder_id:
         raise ValueError("Invalid folder or folder_id. Both must be provided.")
@@ -146,6 +152,12 @@ def closed_eye_separation(self, output_from_blur:dict, user_id:str, folder:str, 
             'message': 'Error occurred in culling'
         }
     
+    print()
+    print()
+    print()
+    print("blur images len", len(images_metadata))
+    print("non blur images len", len(non_blur_images))
+    
     closed_eye_detect_obj = ClosedEyeDetection(
         S3_util_obj=s3_utils,
         root_folder=user_id,
@@ -176,7 +188,12 @@ def duplicate_image_separation(self, output_from_closed_eye:dict, user_id:str, f
                 'message': "No images were found to detect duplicate, only closed eye and blurred images are processed.",
                 'images_metadata': output_from_closed_eye.get('images_metadata')
             }
-        
+    print()
+    print()
+    print()
+    print("closed eye detected images len", len(output_from_closed_eye.get('images_metadata')))
+    print("non closed eye images len", len(output_from_closed_eye.get('open_eye_images')))
+    
     result = asyncio.run(separate_duplicate_images(prev_image_metadata=output_from_closed_eye.get('images_metadata'),
                                                    folder_id=folder_id,
                                                    root_folder=user_id,
@@ -185,7 +202,12 @@ def duplicate_image_separation(self, output_from_closed_eye:dict, user_id:str, f
                                                    task=self,
                                                    images=output_from_closed_eye.get('open_eye_images')
                                                     ))
+    
+    print()
+    print()
+    print('all images metadata len',len(result.get('images_metadata')))
     return result
+    
 
 
 #This task is use to bulk save images metadata into database

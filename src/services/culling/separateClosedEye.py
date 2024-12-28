@@ -118,18 +118,25 @@ class ClosedEyeDetection:
         image_data = raw_image['content']
         extracted_faces, image = await self.detect_faces(image_data)
         predictions = []
+        results = None
 
         for (x, y, width, height) in extracted_faces:
             face_image = image[y:y + height, x:x + width]
             face_inputs = await self.preprocess_face_image(face_image)
             eye_state = await self.predict_eye_state(face_inputs)
-            predictions.append((eye_state, face_image))
+            print()
+            print()
+            print('eye state ',eye_state)
+            predictions.append(eye_state)
 
         # If no faces are detected, consider it an open face
         if not extracted_faces:
-            predictions.append(('OpenFace', image))
+            predictions.append('OpenFace')
+            results = {raw_image['name']: predictions}
+            return results
 
-        return predictions
+        results = {raw_image['name']: predictions}
+        return results
 
     # It will take single or bunch of images and upload them to S3 after making prediction
     async def separate_closed_eye_images_and_upload_to_s3(self, images:list, folder_id:int, task, prev_image_metadata:list=[]):
@@ -200,21 +207,27 @@ class ClosedEyeDetection:
         images_metadata = prev_image_metadata
         response = None
         total_img_len = len(images)
+        
+        print()
+        print()
+        print('total images in closed eye file',total_img_len)
 
         for index, image in enumerate(images):
             results = await self.process_image(image)
+            print()
+            print()
+            print('result', results)
 
-            for eye_state, processed_image in results:
-                # content = image['content']
-                image_name = image['name']
+            for image_name, prediction in results.items():    
+                content = image['content']
+                open_images = Image.open(io.BytesIO(content)).convert('RGB')
 
-                if eye_state == "ClosedFace":
+                if "ClosedFace" in prediction:
                     filename = f"{uuid4()}__{image_name}"
                     byte_arr = io.BytesIO()
-                    processed_image_pil = Image.fromarray(cv2.cvtColor(processed_image, cv2.COLOR_BGR2RGB))
-                    processed_image_pil.save(byte_arr, format="JPEG")
+                    format = open_images.format if open_images.format else 'JPEG'
+                    open_images.save(byte_arr, format=format)
                     byte_arr.seek(0)
-
                     try:
                         response = await self.S3.upload_smart_cull_images(
                             root_folder=self.root_folder,
