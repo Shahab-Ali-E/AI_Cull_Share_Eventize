@@ -8,6 +8,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 async def update_event_details(db_session:AsyncSession, event_id: str, user_id: str, cover_image:UploadFile = File(None), description:str=None):
     update_fields = {}
+    print("###############")
+    print()
+    print()
+    print()
+    print()
+    print()
+    print(f"des {description}")
+    print(f"cover {cover_image.filename if cover_image else None}")
 
     # Handle cover image if available
     if cover_image:
@@ -41,7 +49,7 @@ async def update_event_details(db_session:AsyncSession, event_id: str, user_id: 
         update_fields["cover_image"] = cover_image_url
 
     # Handle description if available
-    if description or description is not "string":
+    if description != "string" and description is not None:
         update_fields["description"] = description
 
     # Check if there are any fields to update
@@ -49,7 +57,7 @@ async def update_event_details(db_session:AsyncSession, event_id: str, user_id: 
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No fields to update")
 
     match_criteria = {"id": event_id, "user_id": user_id}
-
+    
     # Perform the update in the database using upsert
     db_response = await upsert_folder_metadata_DB(
         db_session=db_session,

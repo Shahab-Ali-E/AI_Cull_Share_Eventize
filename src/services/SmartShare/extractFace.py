@@ -76,3 +76,20 @@ def extract_face(image_content, image_name:str):
         }
     except Exception as e:
         raise Exception(f"Error detecting faces in {image_name}: {str(e)}")
+
+# def get_face_embedding(image_path):
+#     """Detects faces and extracts embeddings."""
+#     image = Image.open(image_path).convert('RGB')
+#     faces = mtcnn(image)
+    
+#     if faces is None:
+#         return None  # No face detected
+#     print(len(faces))
+    
+#     embeddings = []
+#     for face in faces:
+#         # face = face.unsqueeze(0)  # Add batch dimension
+#         embedding = model(face)
+#         embeddings.append(embedding.detach().numpy())
+
+#     return embeddings

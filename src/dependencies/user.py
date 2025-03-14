@@ -99,11 +99,11 @@
     
 #     return user
 
+from fastapi.responses import JSONResponse
 from jose import jwt, jwk
 from jose.exceptions import JWTError
 from fastapi import HTTPException, status, Depends
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from clerk_backend_api import Clerk
 from sqlalchemy.future import select
 from config.settings import get_settings
 from dependencies.core import DBSessionDep
@@ -124,7 +124,10 @@ CLERK_SECRECT_KEY = settings.CLERK_SECRET_KEY
 def get_jwks():
     response = requests.get(CLERK_JWKS_URL)
     if response.status_code != 200:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to fetch JWKS")
+        return JSONResponse(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    content=f'Faild to fetch JWKS'
+                )
     return response.json()
 
 # Get public key from JWKS
@@ -133,28 +136,42 @@ def get_public_key(kid: str):
     for key in jwks['keys']:
         if key['kid'] == kid:
             return jwk.construct(key)
-    raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+    return JSONResponse(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    content=f'Invalid token'
+                )
 
 # Decode and validate Clerk JWT
 def decode_token(token: str):
     headers = jwt.get_unverified_headers(token)
-    kid = headers['kid']
+    kid = headers.get('kid')
     public_key = get_public_key(kid)
     try:
-        payload = jwt.decode(token, public_key.to_pem().decode('utf-8'), algorithms=['RS256'], audience="your_audience", issuer=CLERK_ISSUER)
+        payload = jwt.decode(
+            token,
+            public_key.to_pem().decode('utf-8'),
+            algorithms=['RS256'],
+            audience="your_audience",
+            issuer=CLERK_ISSUER
+        )
         return payload
-    except JWTError as e:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token") from e
 
+    except JWTError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token"
+        )
 # Dependency to authenticate user
 async def get_user( db_session: DBSessionDep, credentials: HTTPAuthorizationCredentials = Depends(security)):
 
     token = credentials.credentials
     payload = decode_token(token)
-    
     user_id = payload.get("sub")
     if not user_id:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User ID not found in token")
+        return JSONResponse(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    content=f'User ID not found in token'
+                )
     
     # Now that we have verified the Bearer token and extracted the 
     # user ID, we can proceed to access protected resources. Note that # # using the Bearer token is more secure than passing a session ID in # the query parameter.
@@ -187,13 +204,16 @@ async def get_user( db_session: DBSessionDep, credentials: HTTPAuthorizationCred
             user = (await session.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
             
             if not user:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not registered in the system")
+               return JSONResponse(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    content=f'User not register in our system'
+                )
             
     except NoResultFound as e:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, 
-            detail=str(e)
-        )
+        return JSONResponse(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    content=str(e)
+                )
     
     return user.__dict__
 

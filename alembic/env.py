@@ -12,9 +12,11 @@ from config.settings import get_settings
 from model.CullingFolders import CullingFolder
 from model.SmartShareFolders import SmartShareFolder
 from model.SmartShareImagesMetaData import SmartShareImagesMetaData
+from model.AssociationTable import SmartShareFoldersSecondaryUsersAssociation
 from model.User import User
 from model.CullingImagesMetaData import ImagesMetaData, TemporaryImageURL
 from model.EventArrangmentForm import EventArrangmentForm
+from model.ContactUs import ContactUs
 from config.Database import Base
 
 # this is the Alembic Config object, which provides

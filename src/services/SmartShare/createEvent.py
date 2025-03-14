@@ -1,5 +1,6 @@
 from config.settings import get_settings
 from fastapi import HTTPException, status
+from utils.CustomExceptions import FolderAlreadyExistsException
 from utils.UpsertMetaDataToDB import upsert_folder_metadata_DB
 from sqlalchemy.ext.asyncio import AsyncSession
 from model.SmartShareFolders import SmartShareFolder       
@@ -19,7 +20,19 @@ async def create_event_in_S3_and_DB(event_name:str, user_id:str, s3_utils_obj, d
         if event_data:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"event with name {event_name} already exists !")
         
-        s3_response = await s3_utils_obj.create_folders_for_smart_share(root_folder=user_id, event_name=event_name)
+        try:
+            await s3_utils_obj.create_folders_for_smart_share(root_folder=user_id, event_name=event_name)
+        
+        except FolderAlreadyExistsException as e:
+            try:
+                await s3_utils_obj.delete_object(folder_key=f'{user_id}/{event_name}/')
+                await s3_utils_obj.create_folders_for_smart_share(root_folder=user_id, event_name=event_name)
+                
+            except Exception as e:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f'{str(e)}')
+        
+        except Exception as e:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f'{str(e)}')
         
         # Save cover image locally
         cover_image_url = ""
@@ -39,7 +52,7 @@ async def create_event_in_S3_and_DB(event_name:str, user_id:str, s3_utils_obj, d
 
             # Simulate a publicly accessible URL
             cover_image_url = f"https://api.aicullshareeventizebackend.online/{local_folder}/{unique_filename}"
-        
+                
         #save created folder meta data in DB
         path_in_s3 = f'{settings.AWS_BUCKET_SMART_SHARE_NAME}/{user_id}/{event_name}'
         match_criteria = {'name':event_name, 'path_in_s3':path_in_s3, 'user_id':user_id, 'cover_image':cover_image_url}
@@ -50,7 +63,7 @@ async def create_event_in_S3_and_DB(event_name:str, user_id:str, s3_utils_obj, d
                                             model=SmartShareFolder
                                         )
         
-        return s3_response,db_response
+        return db_response
     
     except HTTPException as e:
         await db_session.rollback()

@@ -1,27 +1,28 @@
 from datetime import datetime, timedelta
 import io
-import time
+from uuid import uuid4
 import cv2
 import numpy as np
-from tensorflow.keras.preprocessing.image import img_to_array # type: ignore
-from uuid import uuid4
 from PIL import Image
 import torch
 from config.settings import get_settings
 from dependencies.mlModelsManager import ModelManager
-from sqlalchemy.ext.asyncio import AsyncSession
+import asyncio
+import logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 
 settings = get_settings()
 
-#models
+# Load models
 models = ModelManager.get_models(settings)
-face_detector = models['face_detector'] # for detecting face
-feature_extractor = models['feature_extractor']  # For image preprocessing
-closed_eye_model = models['closed_eye_detection_model']  # ViT-based model
+face_detector = models['face_detector']  
+feature_extractor = models['feature_extractor']  
+closed_eye_model = models['closed_eye_detection_model']  
 
 class ClosedEyeDetection:
-
-    def __init__(self, S3_util_obj, root_folder:str, inside_root_main_folder:str):
+    def __init__(self, S3_util_obj, root_folder: str, inside_root_main_folder: str):
         self.face_detector = face_detector
         self.model = closed_eye_model
         self.feature_extractor = feature_extractor
@@ -29,245 +30,118 @@ class ClosedEyeDetection:
         self.root_folder = root_folder
         self.inside_root_main_folder = inside_root_main_folder
         self.upload_image_folder = settings.CLOSED_EYE_FOLDER
-        self.labels =  ['ClosedFace', 'OpenFace']
-        
-    def is_face_forward_facing(self, detection, tolerance=0.1):
-        """
-        Determines if a face is forward-facing based on landmark positions.
-        """
-        landmarks = detection.get('keypoints', {})
-        if not landmarks:
-            return False
+        self.labels = ['ClosedFace', 'OpenFace']
 
-        left_eye, right_eye = landmarks['left_eye'], landmarks['right_eye']
-        nose = landmarks['nose']
-
-        eye_center_x = (left_eye[0] + right_eye[0]) / 2
-        nose_symmetry_x = abs(eye_center_x - nose[0]) / abs(right_eye[0] - left_eye[0])
-
-        return nose_symmetry_x <= tolerance
+    def is_face_forward_facing(self, landmarks, tolerance=0.1):
+        left_eye, right_eye, nose = landmarks['left_eye'], landmarks['right_eye'], landmarks['nose']
+        return abs(((left_eye[0] + right_eye[0]) / 2) - nose[0]) / abs(right_eye[0] - left_eye[0]) <= tolerance
 
     async def detect_faces(self, image_data):
-        try:
-            if not image_data:
-                raise ValueError("Image data is empty")
+        if not image_data:
+            logger.error("Image data is empty")
+            raise ValueError("Image data is empty")
 
-            # Convert image bytes to numpy array and decode
-            nparr = np.frombuffer(image_data, np.uint8)
-            image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-            if image is None:
-                raise ValueError("Failed to decode image")
+        nparr = np.frombuffer(image_data, np.uint8)
+        image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        if image is None:
+            logger.error("Failed to decode image")
+            raise ValueError("Failed to decode image")
 
-            image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-            detections = self.face_detector.detect_faces(image_rgb)
+        image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        boxes, _, landmarks = self.face_detector.detect(image_rgb, landmarks=True)
 
-            extracted_faces = []
-            for detection in detections:
-                if self.is_face_forward_facing(detection):
-                    x, y, width, height = detection['box']
-                    x, y = max(0, x), max(0, y)
-                    extracted_faces.append((x, y, width, height))
-            return extracted_faces, image
-        except Exception as e:
-            raise Exception(f"Error detecting faces: {str(e)}")
+        if boxes is None:
+            logger.info("No faces detected.")
+            return [], image
 
-    # For preprocessing of an image
+        extracted_faces = [
+            tuple(map(int, box[:4]))
+            for box, lm in zip(boxes, landmarks)
+            if self.is_face_forward_facing({'left_eye': lm[0], 'right_eye': lm[1], 'nose': lm[2]})
+        ]
+
+        logger.info(f"Detected {len(extracted_faces)} faces.")
+        return extracted_faces, image
+
+
     async def preprocess_face_image(self, face_image):
-        # face = cv2.resize(face_image, (150, 150))  # Resize to match the input size of your model
-        # face = face.astype('float32') / 255.0  # Normalize to [0, 1]
-        # face = img_to_array(face)  # Convert to array
-        # face = np.expand_dims(face, axis=0)  # Add batch dimension
-        # return face
-        
-        face_pil = Image.fromarray(cv2.cvtColor(face_image, cv2.COLOR_BGR2RGB))
-        inputs = self.feature_extractor(face_pil, return_tensors="pt")
-        inputs = {k: v.to(self.model.device) for k, v in inputs.items()}
-        return inputs
+        inputs = self.feature_extractor(Image.fromarray(face_image), return_tensors="pt")
+        return {k: v.to(self.model.device) for k, v in inputs.items()}
 
-    # To predict whether eye is closed or not in a single face
-    async def predict_eye_state(self, face_image):
-        # prediction = self.model.predict(face_image)
-        # print('closed' if prediction[0][0] < 0.6 else 'open')
-        # return 'closed' if prediction[0][0] < 0.6 else 'open'
-        
+    async def predict_eye_state(self, face_inputs):
         with torch.no_grad():
-            outputs = self.model(**face_image)
-        logits = outputs.logits
-        predicted_class_idx = logits.argmax(-1).item()
-        predicted_label = self.labels[predicted_class_idx]
-        print(predicted_label)
-        return predicted_label
+            prediction = self.labels[self.model(**face_inputs).logits.argmax(-1).item()]
+            logger.info(f"Predicted eye state: {prediction}")
+            return prediction
 
-    # It will process a single image and return how many faces in it were closed or open
-    async def process_image(self, raw_image):
-        # Load image as byte data
-        # image_data = raw_image['content']
+
+    async def process_image(self, image_data):
+        extracted_faces, image = await self.detect_faces(image_data['content'])
         
-        # extracted_faces, image = await self.detect_faces(image_data)
-        # predictions = []
-
-        # for (x, y, width, height) in extracted_faces:
-        #     face_image = image[y:y+height, x:x+width]
-        #     preprocessed_face = await self.preprocess_face_image(face_image)
-        #     eye_state = await self.predict_eye_state(preprocessed_face)
-        #     predictions.append(eye_state)
-
-        # results = {raw_image['name']: predictions}
-        # return results
+        for x1, y1, x2, y2 in extracted_faces:
+            face_inputs = await self.preprocess_face_image(image[y1:y2, x1:x2])
+            prediction = await self.predict_eye_state(face_inputs)
+            logger.info(f"Predicted eye state: {prediction}")
+            if prediction == "ClosedFace":
+                return {image_data['name']: ["ClosedFace"]}
         
-        image_data = raw_image['content']
-        extracted_faces, image = await self.detect_faces(image_data)
-        predictions = []
-        results = None
+        return {image_data['name']: ["OpenFace"]}
 
-        for (x, y, width, height) in extracted_faces:
-            face_image = image[y:y + height, x:x + width]
-            face_inputs = await self.preprocess_face_image(face_image)
-            eye_state = await self.predict_eye_state(face_inputs)
-            print()
-            print()
-            print('eye state ',eye_state)
-            predictions.append(eye_state)
+    async def separate_closed_eye_images_and_upload_to_s3(self, images, folder_id, task=None, prev_images_metadata=None):
+        prev_images_metadata = prev_images_metadata or []
+        open_eye_images, metadata_list, total_images = [], prev_images_metadata, len(images)
 
-        # If no faces are detected, consider it an open face
-        if not extracted_faces:
-            predictions.append('OpenFace')
-            results = {raw_image['name']: predictions}
-            return results
-
-        results = {raw_image['name']: predictions}
-        return results
-
-    # It will take single or bunch of images and upload them to S3 after making prediction
-    async def separate_closed_eye_images_and_upload_to_s3(self, images:list, folder_id:int, task, prev_image_metadata:list=[]):
-        # open_eyes_images = []
-        # images_metadata = prev_image_metadata
-        # response = None
-        # total_img_len = len(images)
-        # for index, image in enumerate(images):
-        #     result = await self.process_image(image)
+        async def upload_closed_eye_image(image_name, image_content, content_type):
+            filename = f"{uuid4()}__{image_name}"
+            byte_arr = io.BytesIO()
             
-        #     for img_name, predictions in result.items():
-        #         content = image['content']
-        #         open_images = Image.open(io.BytesIO(content)).convert('RGB')
-                
-        #         if "closed" in predictions:
-        #             filename = f"{uuid4()}__{img_name}"
-        #             byte_arr = io.BytesIO()
-        #             format = open_images.format if open_images.format else 'JPEG'
-        #             open_images.save(byte_arr, format=format)
-        #             byte_arr.seek(0)
-                    
-        #             try:
-        #                 response = await self.S3.upload_smart_cull_images(
-        #                                                         root_folder=self.root_folder,
-        #                                                         main_folder=self.inside_root_main_folder,
-        #                                                         upload_image_folder=self.upload_image_folder,
-        #                                                         image_data=byte_arr,
-        #                                                         filename=filename
-        #                                                     )
-        #             except Exception as e:
-        #                 raise Exception(f"Error uploading image to S3: {str(e)}")
-                    
-        #             #generating presinged url so user can download image
-        #             key = f"{self.root_folder}/{self.inside_root_main_folder}/{self.upload_image_folder}/{filename}"
-        #             presigned_url = await self.S3.generate_presigned_url(key, expiration=settings.PRESIGNED_URL_EXPIRY_SEC)
+            # Normalize format
+            format_map = {
+                "image/jpeg": "JPEG",
+                "image/jpg": "JPEG",
+                "image/png": "PNG",
+                "image/webp": "WEBP",
+            }
+            
+            format = format_map.get(content_type.lower(), "JPEG")  # Default to JPEG if unknown
+            
+            Image.open(io.BytesIO(image_content)).convert('RGB').save(byte_arr, format=format)
+            byte_arr.seek(0)
 
-        #             metadata = {
-        #                 'id': filename,
-        #                 'name': img_name,
-        #                 'detection_status':'ClosedEye',
-        #                 'file_type': image['content_type'],
-        #                 'images_download_path': presigned_url,
-        #                 'images_download_validity':datetime.now() + timedelta(seconds=settings.PRESIGNED_URL_EXPIRY_SEC),
-        #                 'culling_folder_id': folder_id
-        #             }
+            key = f"{self.root_folder}/{self.inside_root_main_folder}/{self.upload_image_folder}/{filename}"
+            await self.S3.upload_smart_cull_images(self.root_folder, self.inside_root_main_folder, self.upload_image_folder, byte_arr, filename)
+            presigned_url = await self.S3.generate_presigned_url(key, expiration=settings.PRESIGNED_URL_EXPIRY_SEC)
 
-        #             #appending closed images metadata to and array
-        #             images_metadata.append(metadata)
-                    
-        #         else:
-        #             open_eyes_images.append(image)  # Append the image if eyes are open
+            return {
+                'id': filename,
+                'name': image_name,
+                'detection_status': 'ClosedEye',
+                'file_type': format,
+                'image_download_path': presigned_url,
+                'image_download_validity': datetime.now() + timedelta(seconds=settings.PRESIGNED_URL_EXPIRY_SEC),
+                'culling_folder_id': folder_id
+            }
 
-        #     # Updating progress here
-        #     if task:
-        #         progress = ((index + 1) / total_img_len) * 100
-        #         task.update_state(state='PROGRESS', meta={'progress': progress, 'info': 'Closed eye image separation processing'})
 
-        # response = 'closed eye' + response if response == 'image uploaded successfully' else response
-        # task.update_state(state='SUCCESS', meta={'progress': 100, 'info': 'Closed eye image separation done!'})
-        # time.sleep(1)  
-        # return {
-        #     'status': 'SUCCESS',
-        #     'open_eye_images': open_eyes_images,
-        #     'images_metadata':images_metadata,
-        #     's3_response':response
-        # }
-        open_eyes_images = []
-        images_metadata = prev_image_metadata
-        response = None
-        total_img_len = len(images)
-        
-        print()
-        print()
-        print('total images in closed eye file',total_img_len)
-
-        for index, image in enumerate(images):
+        async def process_single_image(index, image):
+            logger.info(f"Processing image {index + 1}/{total_images}: {image['name']}")
             results = await self.process_image(image)
-            print()
-            print()
-            print('result', results)
-
-            for image_name, prediction in results.items():    
-                content = image['content']
-                open_images = Image.open(io.BytesIO(content)).convert('RGB')
-
+            
+            for image_name, prediction in results.items():
+                logger.info(f"Image {image_name}: Prediction {prediction}")
+                
                 if "ClosedFace" in prediction:
-                    filename = f"{uuid4()}__{image_name}"
-                    byte_arr = io.BytesIO()
-                    format = open_images.format if open_images.format else 'JPEG'
-                    open_images.save(byte_arr, format=format)
-                    byte_arr.seek(0)
-                    try:
-                        response = await self.S3.upload_smart_cull_images(
-                            root_folder=self.root_folder,
-                            main_folder=self.inside_root_main_folder,
-                            upload_image_folder=self.upload_image_folder,
-                            image_data=byte_arr,
-                            filename=filename,
-                        )
-                    except Exception as e:
-                        raise Exception(f"Error uploading image to S3: {str(e)}")
-
-                    # Generate metadata for the closed eye image
-                    key = f"{self.root_folder}/{self.inside_root_main_folder}/{self.upload_image_folder}/{filename}"
-                    presigned_url = await self.S3.generate_presigned_url(key, expiration=settings.PRESIGNED_URL_EXPIRY_SEC)
-                    metadata = {
-                        'id': filename,
-                        'name': image_name,
-                        'detection_status': 'ClosedEye',
-                        'file_type': image['content_type'],
-                        'images_download_path': presigned_url,
-                        'images_download_validity': datetime.now() + timedelta(seconds=settings.PRESIGNED_URL_EXPIRY_SEC),
-                        'culling_folder_id': folder_id
-                    }
-
-                    images_metadata.append(metadata)
+                    metadata_list.append(await upload_closed_eye_image(image_name, image['content'], image.get('content_type')))
                 else:
-                    open_eyes_images.append(image)  # Append the image if eyes are open
+                    open_eye_images.append(image)
 
-            # Updating progress
             if task:
-                progress = ((index + 1) / total_img_len) * 100
-                task.update_state(state='PROGRESS', meta={'progress': progress, 'info': 'Closed eye image separation processing'})
+                task.update_state(state='PROGRESS', meta={'progress': ((index + 1) / total_images) * 100, 'info': 'Processing images'})
 
-        response = 'Closed Eye ' + response if response == 'image uploaded successfully' else response
-        task.update_state(state='SUCCESS', meta={'progress': 100, 'info': 'Closed eye image separation done!'})
-        # time.sleep(1)
-        return {
-            'status': 'SUCCESS',
-            'open_eye_images': open_eyes_images,
-            'images_metadata': images_metadata,
-            's3_response': response
-        }
 
+        await asyncio.gather(*[process_single_image(i, img) for i, img in enumerate(images)])
+
+        if task:
+            task.update_state(state='SUCCESS', meta={'progress': 100, 'info': 'Processing complete'})
+
+        return {'status': 'SUCCESS', 'open_eye_images': open_eye_images, 'images_metadata': metadata_list, 's3_response': 'Upload Complete'}

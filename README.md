@@ -1,3 +1,42 @@
+# AI Cull Share Eventize
+
+A backend application for AI-powered image culling, sharing, and event organization.
+
+## Features
+
+- Image culling using AI models
+- Smart image sharing
+- Event organization
+- Celery for background tasks
+- PostgreSQL for data storage
+- RabbitMQ for message queuing
+
+## Setup
+
+### Using Docker
+
+```bash
+# Build the Docker images
+docker-compose build
+
+# Start the services
+docker-compose up
+```
+
+### Local Development
+
+```bash
+# Install dependencies
+poetry install
+
+# Run the application
+uvicorn src.main.main:app --reload
+```
+
+## Environment Variables
+
+See the `.env` file for required environment variables.
+
 # important commands 
 `1. TO RUN SERVER :->poetry run uvicorn src.main.main:app --reload`
 

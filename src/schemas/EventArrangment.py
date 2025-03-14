@@ -1,5 +1,5 @@
 from pydantic import BaseModel, EmailStr, Field, UUID4, field_validator
-from typing import Optional
+from typing import List, Optional
 from datetime import datetime
 
 class BookEventFormSchema(BaseModel):
@@ -50,8 +50,38 @@ class BookEventFormSchema(BaseModel):
                 "alternativeCity": "Lahore",
                 "portfolio": "wedding",
                 "specialRequirements": "Wheelchair access and vegetarian catering.",
-                "userId": "user_2pn6uXJhoILeAubepXAoaluOQM2"
+                "userId": "user_2pn6uXJhoILeAubepXAoaluOOO2"
             }
         }
     }
     
+class GetEventResponse(BaseModel):
+    id: UUID4  # UUID field for the event ID
+
+    # Personal Information
+    fullName: str
+    email: str
+    phone: str
+
+    # Event Information
+    eventType: str
+    eventDescription: Optional[str] = None
+    eventDate: datetime
+    numberOfGuests: int
+    budget: float
+
+    # Destination Details
+    selectCountry: str
+    city: str
+    alternativeCity: Optional[str] = None
+
+    # Additional Information
+    portfolio: Optional[str] = None
+    specialRequirements: Optional[str] = None
+
+    # Timestamps
+    submittedAt: datetime
+
+class GetMultipleEventsResponse(BaseModel):
+    events: List[GetEventResponse]
+    total_count:int

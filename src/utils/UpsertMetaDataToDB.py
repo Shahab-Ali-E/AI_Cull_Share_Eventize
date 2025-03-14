@@ -1,3 +1,4 @@
+from fastapi.responses import JSONResponse
 from sqlalchemy import insert
 from fastapi import HTTPException,status
 from sqlalchemy.exc import SQLAlchemyError
@@ -131,8 +132,11 @@ async def upsert_folder_metadata_DB(db_session: AsyncSession, match_criteria: di
 
         else:
             if existing_record:
-                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Folder already with name {existing_record.name} already found")
-            
+                return JSONResponse(
+                    status_code=status.HTTP_409_CONFLICT,
+                    content=f'Folder already with name {existing_record.name} already found !'
+                )
+               
             # Create a new record
             new_record = model(**match_criteria)
             existing_record = new_record

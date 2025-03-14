@@ -1,11 +1,11 @@
 from datetime import datetime, timezone
 from typing import List, Optional
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import (APIRouter, Depends, File, HTTPException, Query, Request,
                      UploadFile, status)
 from fastapi.responses import JSONResponse
-from sqlalchemy import asc, desc
+from sqlalchemy import asc, desc, func
 from sqlalchemy.future import select
 
 from config.security import validate_images_and_storage
@@ -15,7 +15,7 @@ from dependencies.user import get_user
 from model.CullingFolders import CullingFolder
 from model.CullingImagesMetaData import ImagesMetaData, TemporaryImageURL
 from model.User import User
-from schemas.FolderMetaDataResponse import CullingFolderMetaData
+from schemas.FolderMetaDataResponse import CullingFolderMetaDataById, CullingsResponse, TemporaryImageURLResponse, UploadCullingImagesResponse
 from schemas.ImageMetaDataResponse import CulledImagesMetadataResponse
 from schemas.ImageTaskData import ImageTaskData
 from services.Culling.createFolderInS3 import create_folder_in_S3
@@ -45,12 +45,12 @@ s3_utils = S3Utils(aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
 
 
 
-@router.get("/get_all_folder", response_model=List[CullingFolderMetaData])
+@router.get("/get_all_folder", response_model=CullingsResponse)
 async def get_all_folders(
     db_session:DBSessionDep, 
     user:User = Depends(get_user),
     limit: int = Query(10, ge=1, le=100, description="Limit number of folders to retrieve"),
-    offset: int = Query(0, ge=0, description="Number of folders to skip"),
+    page: int = Query(1, ge=1, description="Page number (starting from 1)"),
     search: Optional[str] = Query(None, description="Search by folder name"),
     sort_by: Optional[str] = Query("created_date", description="Sort by size, name, or created_date"),
     sort_order: Optional[str] = Query("asc", description="Sort order: asc or desc")
@@ -63,7 +63,7 @@ async def get_all_folders(
 
         ### Parameters:
         - **`limit`** *(int, optional)*: The maximum number of folders to retrieve. Defaults to `10`. Specify a value between `1` and `100`.
-        - **`offset`** *(int, optional)*: The number of folders to skip in the result set. Defaults to `0`.
+        - **`page`** *(int, optional)*: The number of folders to skip in the result set. Defaults to `0`.
         - **`search`** *(str, optional)*: A string to filter folders by name. Returns only those folders whose names contain the specified substring.
         - **`sort_by`** *(str, optional)*: The field by which to sort the results. Acceptable values are `size`, `name`, and `created_date`. Defaults to `created_date`.
         - **`sort_order`** *(str, optional)*: The order in which to sort the results. Specify `asc` for ascending or `desc` for descending order. Defaults to `asc`.
@@ -77,9 +77,7 @@ async def get_all_folders(
     """
 
     user_id = user.get('id')
-    if not user_id:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='Unauthorized access!')
-
+   
     # Base query to fetch all folders
     query = select(CullingFolder).where(
         CullingFolder.user_id == user_id
@@ -101,20 +99,32 @@ async def get_all_folders(
     query = query.order_by(desc(order_by_column) if sort_order == "desc" else asc(order_by_column))
 
     # Apply pagination
-    query = query.limit(limit).offset(offset)
+    offset_value = limit * (page-1)
+    paginated_query = query.limit(limit).offset(offset_value)
+    
+    # Count query
+    count_query = select(func.count()).select_from(query.subquery())
 
     async with db_session.begin():
         try:
-            result = await db_session.scalars(query)
-            folders = result.all()
+            # Execute paginated query
+            paginated_result = await db_session.scalars(paginated_query)
+            folders = paginated_result.all()
 
-            return folders
+            # Execute count query
+            total_count_result = await db_session.scalar(count_query)
+            total_count = total_count_result or 0
+
+            return {
+                "total_count": total_count,
+                "folders": folders,
+            }
         
         except Exception as e:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
      
 
-@router.get("/get_folder_id/{folder_id}")
+@router.get("/get_folder_id/{folder_id}", response_model=CullingFolderMetaDataById)
 async def get_folder_by_id(
     request: Request,
     db_session: DBSessionDep,
@@ -140,9 +150,7 @@ async def get_folder_by_id(
     """
 
     user_id = user.get('id') #"user_2pqOmYikrXY1pWefuBuqzRGm3vA"
-    if not user_id:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='Unauthorized access!')
-
+   
     async with db_session.begin():
         try:
             # Query to get the folder by ID and user ID
@@ -155,32 +163,42 @@ async def get_folder_by_id(
 
             # Check if folder exists
             if folder is None:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Folder not found!')
+                return JSONResponse(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    content=f'Folder with id {folder_id} not found!'
+                )
             
             # Query to get the temporary images urls
             temp_urls = (await db_session.scalars(select(TemporaryImageURL).where(TemporaryImageURL.culling_folder_id == folder_id))).all()
             updated_urls = []
             
             for data in temp_urls:
-                validity_time =data.validity
+                validity_time = data.validity
                 current_time = datetime.now(timezone.utc)
                 
-                if current_time < validity_time:         
-                        updated_urls.append({"url":data.url, "validity":validity_time})# Keep only valid URLs
+                if current_time < validity_time:
+                    updated_urls.append(TemporaryImageURLResponse(
+                        id=data.id,
+                        name=data.name,
+                        file_type=data.file_type,
+                        image_download_path=data.url,
+                        image_download_validity=validity_time
+                    ))
                 else:
                     await db_session.delete(data)  # Remove invalid URLs
 
             await db_session.commit()
             
-            return {
-                "id":folder.id,
-                "name":folder.name,
-                "created_at":folder.created_at,
-                "total_size":folder.total_size,
-                "culling_done":folder.culling_done,
-                "culling_in_progress":folder.culling_in_progress,
-                "temporary_images_urls":updated_urls,
-            }
+            # Return the response using the Pydantic model
+            return CullingFolderMetaDataById(
+                id=folder.id,
+                name=folder.name,
+                created_at=folder.created_at,
+                total_size=folder.total_size,
+                culling_done=folder.culling_done,
+                culling_in_progress=folder.culling_in_progress,
+                temporary_images_urls=updated_urls
+            )
 
         except HTTPException as e:
             raise HTTPException(status_code=e.status_code, detail=str(e))
@@ -222,9 +240,7 @@ async def get_culled_images_metadata(
     """
     # Check for user authentication
     user_id = user.get('id')
-    if not user_id:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='Unauthorized access!')
-
+   
     # Find the folder if it exists
     async with db_session.begin():
         try:
@@ -238,8 +254,10 @@ async def get_culled_images_metadata(
 
             # Check if folder exists
             if folder is None:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Folder not found!')
-
+                return JSONResponse(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    content=f'Folder with id {folder_id} not found!'
+                )
             # Construct base query for images metadata
             query = select(ImagesMetaData).where(
                 ImagesMetaData.culling_folder_id == folder.id,
@@ -248,10 +266,6 @@ async def get_culled_images_metadata(
 
             # Execute query to get culled images metadata
             culled_images_metadata = (await db_session.scalars(query)).all()
-
-            print('$$$$$$$$$$$$$$$$$$$$$$$$$$$$ Culled Images Metadata $$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$')
-            print(culled_images_metadata)
-
             return culled_images_metadata
 
         except HTTPException as e:
@@ -263,9 +277,7 @@ async def get_culled_images_metadata(
 @router.get('/download_images/{folder_id}')
 async def download_folder(folder_id:UUID, request:Request, db_session: DBSessionDep, user:User = Depends(get_user)):
     user_id = user.get('id')
-    if not user_id:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='unauthorized access!')   
-    
+   
     async with db_session.begin():
         try:
             folder_data = (await db_session.execute(select(CullingFolder).where(
@@ -314,15 +326,16 @@ async def create_directory(dir_name:str, request:Request,  db_session: DBSession
     """
 
     user_id = user.get('id')
-    if not user_id:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='unauthorized access!')  
-    
+   
     storage_used = user.get('total_culling_storage_used')
     
     # validate user storage
     if storage_used == settings.MAX_SMART_CULL_MODULE_STORAGE:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='storage full!')
-    
+        return JSONResponse(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    content=f'Storage full !'
+                )
+       
     async with db_session.begin():
         try:
             response =  await create_folder_in_S3(dir_name=dir_name.lower(), s3_utils_obj=s3_utils, db_session=db_session, user_id=user_id)
@@ -336,7 +349,7 @@ async def create_directory(dir_name:str, request:Request,  db_session: DBSession
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 
-@router.post('/upload_images/{folder_id}', status_code=status.HTTP_202_ACCEPTED)
+@router.post('/upload_images/{folder_id}', status_code=status.HTTP_202_ACCEPTED, response_model=UploadCullingImagesResponse)
 async def upload_images(request: Request, folder_id: str, db_session: DBSessionDep,user: User = Depends(get_user), images: list[UploadFile] = File(...)):
     """
     📸 **Upload Images to S3 and Initiate Background Culling Task** 📸
@@ -363,11 +376,8 @@ async def upload_images(request: Request, folder_id: str, db_session: DBSessionD
     - ⚠️ **500 Internal Server Error**: An unexpected error occurred during the processing. This could be due to issues with S3, the database, or the task dispatching system.
     """
     try:
-        # user_id = user.get('id')
-        user_id='asdasda'
-        if not user_id:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized access!")
-
+        user_id = user.get('id')
+      
         # Begin a single transaction for the entire process
         async with db_session.begin():
             # Validate folder
@@ -379,8 +389,11 @@ async def upload_images(request: Request, folder_id: str, db_session: DBSessionD
             )
             folder_data = folder_data.scalar_one_or_none()
             if not folder_data:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Folder {folder_id} not found")
-
+                return JSONResponse(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    content=f'Folder with id {folder_id} not found!'
+                )
+                
             # Validate images and storage
             storage_used = await db_session.execute(
                 select(User.total_culling_storage_used).where(User.id == user_id)
@@ -392,8 +405,11 @@ async def upload_images(request: Request, folder_id: str, db_session: DBSessionD
             )
 
             if not is_valid:
-                raise HTTPException(status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, detail=output_validated_storage)
-
+                return JSONResponse(
+                    status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+                    content=output_validated_storage
+                )
+               
             # Process batches
             batch_size = 50
             all_presigned_urls = []
@@ -409,14 +425,23 @@ async def upload_images(request: Request, folder_id: str, db_session: DBSessionD
                         db_session=db_session,
                         culling_folder_id=folder_id
                     )
-                    all_presigned_urls.extend(presigned_urls)
+                    for data in presigned_urls:
+                       all_presigned_urls.append(TemporaryImageURLResponse(
+                           id=uuid4(),
+                           name=data.get('name'),
+                           file_type=data.get('file_type'),
+                           image_download_path=data.get('url'),
+                           image_download_validity=data.get('validity')
+                           ))
                 except Exception as e:
                     print(f"Error processing batch {i}: {str(e)}")
                     raise HTTPException(
                         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                         detail=f"Error processing batch {i}: {str(e)}"
                     )
-
+            
+            print(f'\n\n\n\n\n all presinged urls {all_presigned_urls}')
+            
             # Update folder metadata and user storage in the database
             updated_folder_storage = folder_data.total_size + output_validated_storage
             match_criteria = {"id": folder_id, "name": folder_data.name, "user_id": user_id}
@@ -442,8 +467,11 @@ async def upload_images(request: Request, folder_id: str, db_session: DBSessionD
             if not is_valid:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"{response}")
 
-        return {"message": "Images uploaded successfully", "data": all_presigned_urls}
-
+        return UploadCullingImagesResponse(
+            message="Images uploaded successfully",
+            data=all_presigned_urls
+        )
+        
     except HTTPException as e:
         raise e
     except Exception as e:
@@ -454,7 +482,7 @@ async def upload_images(request: Request, folder_id: str, db_session: DBSessionD
 
 # user: User = Depends(get_user)
 @router.post('/start_culling/', status_code=status.HTTP_102_PROCESSING, response_model=None)
-async def start_culling(request: Request, culling_data: ImageTaskData, db_session: DBSessionDep, user: User = Depends(get_user)):
+async def start_culling(culling_data: ImageTaskData, db_session: DBSessionDep, user: User = Depends(get_user)):
     """
     🔄 **Initiates the Image Culling Process** 🔄
 
@@ -479,25 +507,23 @@ async def start_culling(request: Request, culling_data: ImageTaskData, db_sessio
     - ⚠️ **500 Internal Server Error**: An unexpected error occurred when sending the task to Celery.
     """
     
-    user_id = "user_2pqOmYikrXY1pWefuBuqzRGm3vA"#user.get('id')
-    if not user_id:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='unauthorized access !') 
-
+    user_id = user.get('id')
+   
     async with db_session.begin():
         #get folder data
         folder_data = (await db_session.scalars(select(CullingFolder).where(CullingFolder.id==culling_data.folder_id, 
                                                                         CullingFolder.user_id == user_id))).first()
         
         if not folder_data:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Folder {culling_data.folder_id} not found")
-        
+            return JSONResponse(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    content=f'Folder with id {culling_data.folder_id} not found!'
+                )
+            
         folder_data.culling_in_progress = True
         db_session.add(folder_data)
         await db_session.commit()
         
-    if not folder_data:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f'Could not find folder with {culling_data.folder_id} in culling module')
-
     #Sending images URL and other info to Celery task
     try:
         task = culling_task.apply_async(args=[user_id, culling_data.images_url, folder_data.name, folder_data.id])
@@ -527,13 +553,12 @@ async def delete_folder(dir_name:str, request:Request, db_session: DBSessionDep,
     ### Responses:
     - ✅ **200 OK**: The folder has been successfully deleted from S3 and its record removed from the database.
     - ❓ **404 Not Found**: The specified folder or its database record does not exist.
+    - 🔒 **423 Locked**: The specified folder cannot delete if the culling in progress.
     - ⚠️ **500 Internal Server Error**: An unexpected error occurred during the deletion process.
     """
 
     user_id = user.get('id')
-    if not user_id:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='unauthorized access !') 
-
+   
     folder_path = f'{user_id}/{dir_name}/'
     try:
         async with db_session.begin():

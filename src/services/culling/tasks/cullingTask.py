@@ -148,7 +148,7 @@ def closed_eye_separation(self, output_from_blur:dict, user_id:str, folder:str, 
     
     if len(non_blur_images)==0 and len(images_metadata)==0:
         return {
-            'status': 'error',
+            'status': 'FAILURE',
             'message': 'Error occurred in culling'
         }
     
@@ -163,7 +163,7 @@ def closed_eye_separation(self, output_from_blur:dict, user_id:str, folder:str, 
         root_folder=user_id,
         inside_root_main_folder=folder,
     )
-    result = asyncio.run(closed_eye_detect_obj.separate_closed_eye_images_and_upload_to_s3(     prev_image_metadata=images_metadata,
+    result = asyncio.run(closed_eye_detect_obj.separate_closed_eye_images_and_upload_to_s3(     prev_images_metadata=images_metadata,
                                                                                                 images=non_blur_images, 
                                                                                                 task=self, 
                                                                                                 folder_id=folder_id

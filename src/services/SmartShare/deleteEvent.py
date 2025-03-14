@@ -1,3 +1,5 @@
+import os
+import shutil
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from config.settings import get_settings
@@ -47,6 +49,11 @@ async def delete_event_s3_db_collection(db_session:AsyncSession, s3_utils_obj, u
                 detail=s3_response
             )
         
+        
+        # Remove local folder of smart share event
+        folder_path = os.path.join("src", "services", "SmartShare", "Smart_Share_Events_Data", f"{event_data.id}")
+        shutil.rmtree(folder_path, ignore_errors=True)
+    
     except HTTPException as e:
         await db_session.rollback()
         raise e

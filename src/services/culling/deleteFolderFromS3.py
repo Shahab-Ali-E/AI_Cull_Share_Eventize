@@ -1,4 +1,5 @@
 from fastapi import HTTPException, status
+from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from model.CullingFolders import CullingFolder
 from utils.UpdateUserStorage import update_user_storage_in_db
@@ -37,10 +38,16 @@ async def delete_s3_folder_and_update_db(del_folder_path: str, db_session: Async
 
     # Raise an error if the folder is not found in the database
     if not folder_data:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Folder with name '{folder_name}' not found in database"
-        )
+        return JSONResponse(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    content=f'Folder with name {folder_name} not found!'
+                )
+    
+    if folder_data.culling_in_progress is True:
+        return JSONResponse(
+                    status_code=status.HTTP_423_LOCKED,
+                    content=f'Unable to Delete Folder While Culling is In Progress'
+                )
 
     # Attempt to delete the folder from Database
     try:        

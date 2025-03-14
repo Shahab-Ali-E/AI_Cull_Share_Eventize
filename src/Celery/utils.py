@@ -1,10 +1,10 @@
 from celery import current_app as current_celery_app
 from celery.result import AsyncResult
 from fastapi import HTTPException, status
-from Celery.config import get_settings
+from Celery.config import celery_get_settings
 
 
-settings = get_settings()
+settings = celery_get_settings()
 
 
 def create_celery():
@@ -22,8 +22,8 @@ def create_celery():
     celery_app.conf.update(broker_connection_timeout=43200) # Broker connection timeout in seconds(12 hour)
     
     # Prevents timeout errors during lengthy interactions with Redis for storing or retrieving task results
-    celery_app.conf.update(redis_socket_timeout=43200) # Set to 12 hours for long-running tasks
-    celery_app.conf.update(redis_socket_keepalive=True)  # Keep the Redis connection alive
+    # celery_app.conf.update(redis_socket_timeout=43200) # Set to 12 hours for long-running tasks
+    # celery_app.conf.update(redis_socket_keepalive=True)  # Keep the Redis connection alive
     # Worker-related settings
     celery_app.conf.update(worker_max_tasks_per_child=10) # will retart after 10 task so if any task won't let the resource free it will help in that case
     celery_app.conf.update(worker_concurrency=4) # 4 task can run at same time

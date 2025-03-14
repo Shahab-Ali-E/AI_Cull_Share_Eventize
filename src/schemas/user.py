@@ -1,4 +1,6 @@
 from pydantic import BaseModel,EmailStr, Field
+from typing import Optional
+from  uuid import UUID 
 
 class UserResponse(BaseModel):
     id:str
@@ -11,3 +13,10 @@ class UserResponse(BaseModel):
 
 class SignUpResponse(UserResponse):
     status:str
+
+class AddSecondaryUserSchema(BaseModel):
+    first_name:str
+    last_name:str
+    email:EmailStr
+    phone:Optional[str]
+    event_id:UUID

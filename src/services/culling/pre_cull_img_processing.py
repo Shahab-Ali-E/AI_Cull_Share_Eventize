@@ -40,7 +40,7 @@ async def pre_cull_image_processing(images:list[UploadFile], s3_utils, user_id:i
         presigned_url = await s3_utils.generate_presigned_url(key, expiration=settings.PRESIGNED_URL_EXPIRY_SEC)
         validity = datetime.now(tz=timezone.utc) + timedelta(seconds=settings.PRESIGNED_URL_EXPIRY_SEC)
         
-        return {"url": presigned_url, "validity": validity}
+        return {"name":filename, "file_type":image.content_type , "url": presigned_url, "validity": validity}
 
     # Upload images concurrently
     upload_tasks = [upload_image(image) for image in images]
@@ -49,6 +49,8 @@ async def pre_cull_image_processing(images:list[UploadFile], s3_utils, user_id:i
     # inserting valid record to database
     valid_records = [
         TemporaryImageURL(
+            name=record["name"],
+            file_type=record["file_type"],
             url=record["url"],
             validity=record["validity"],
             culling_folder_id=culling_folder_id,

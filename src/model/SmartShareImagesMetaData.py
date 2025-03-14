@@ -15,8 +15,8 @@ class SmartShareImagesMetaData(Base):
     name: Mapped[str] = mapped_column(nullable=False)
     file_type: Mapped[str] = mapped_column(nullable=False)
     upload_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    images_download_path: Mapped[str] = mapped_column(nullable=False)
-    images_download_validity: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    image_download_path: Mapped[str] = mapped_column(nullable=False)
+    image_download_validity: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     smart_share_folder_id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("smart_share_folders.id", ondelete='CASCADE'), nullable=False)
     
     # Relationship to FoldersInS3

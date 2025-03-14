@@ -1,10 +1,18 @@
+import asyncio
 import os
 import logging
+import sys
 import warnings
+
+
+if  sys.platform.startswith("win"):
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())    
+
 # Suppress TensorFlow warnings
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'  # Suppress all logs (0=all logs, 1=INFO, 2=WARNING, 3=ERROR)
 os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'  # Disable oneDNN optimizations
 
+from fastapi.templating import Jinja2Templates
 import tensorflow as tf
 from transformers import logging as transformers_logging
 

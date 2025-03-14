@@ -74,8 +74,8 @@ async def separate_blur_images(images:list, root_folder:str, inside_root_main_fo
                 'name': image['name'],
                 'file_type': image['content_type'],
                 'detection_status':'Blur',
-                'images_download_path': presigned_url,
-                'images_download_validity':datetime.now() + timedelta(seconds=settings.PRESIGNED_URL_EXPIRY_SEC),   
+                'image_download_path': presigned_url,
+                'image_download_validity':datetime.now() + timedelta(seconds=settings.PRESIGNED_URL_EXPIRY_SEC),   
                 'culling_folder_id': folder_id
             }
             blurred_metadata.append(image_metadata)
@@ -89,7 +89,6 @@ async def separate_blur_images(images:list, root_folder:str, inside_root_main_fo
             
     response = 'Blur ' + response if response == 'image uploaded successfully' else response
     task.update_state(state='SUCCESS', meta={'progress': 100, 'info': 'Blur image separation done!'})
-    # time.sleep(1)
     return {
             'status': 'SUCCESS',
             'non_blur_images': non_blur_images,

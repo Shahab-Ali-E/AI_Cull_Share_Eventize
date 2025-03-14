@@ -1,5 +1,4 @@
-from fastapi import APIRouter,Request,Depends
-from model.User import User
+from fastapi import APIRouter,Request
 from dependencies.user import get_user
 import asyncio
 import json

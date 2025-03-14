@@ -1,3 +1,4 @@
+from fastapi.responses import JSONResponse
 from config.settings import get_settings
 from fastapi import HTTPException,status
 from utils.CustomExceptions import FolderAlreadyExistsException
@@ -17,8 +18,11 @@ async def create_folder_in_S3(dir_name:str, s3_utils_obj, db_session:AsyncSessio
                                                                             ))).first()
 
         if folder_exists:
-            raise HTTPException(status_code=status.HTTP_406_NOT_ACCEPTABLE, detail=f'folder with name {dir_name} already exsits')
-        
+            return JSONResponse(
+                    status_code=status.HTTP_406_NOT_ACCEPTABLE,
+                    content=f'Folder with name {dir_name} already exsits'
+                )
+            
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f'{str(e)}')
     

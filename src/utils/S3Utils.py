@@ -223,7 +223,8 @@ class S3Utils:
             self.create_object(root_folder)
         
         if await self.folder_exists(event_name):
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f'Event with name "{event_name}" already exists.')
+            raise FolderAlreadyExistsException(f'Event with name "{event_name}" already exists.')
+            
         else:
             await self.create_object(event_name)
         
