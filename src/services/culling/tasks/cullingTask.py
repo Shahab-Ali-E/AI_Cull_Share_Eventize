@@ -1,16 +1,18 @@
 import asyncio
 import time
+from model.CullingImagesMetaData import ImagesMetaData, TemporaryImageURL
 from services.Culling.separateBlurImages import separate_blur_images
-from fastapi.responses import JSONResponse
 from config.settings import get_settings
 from services.Culling.separateClosedEye import ClosedEyeDetection
-from config.Database import get_db
+from config.syncDatabase import celery_sync_session
 from services.Culling.separateDuplicateImages import separate_duplicate_images
-from utils.UpsertMetaDataToDB import upsert_image_metadata_DB
+from utils.UpsertMetaDataToDB import insert_image_metadata
 from utils.CustomExceptions import SignatureDoesNotMatch, URLExpiredException, UnauthorizedAccess
 from utils.S3Utils import S3Utils
 from Celery.utils import create_celery
 import requests
+from sqlalchemy import delete, select
+from model.CullingFolders import CullingFolder
 from celery import chain
 
 
@@ -25,22 +27,44 @@ s3_utils = S3Utils(aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
 
 
 #----------------------FOR BULK INSERT ALL IMAGES RECORD IN DATABASE-------------------------------
-async def bulk_save(images_record:list):
+# Helper function to perform bulk saving
+def bulk_save(images_record: list, folder_id:str):
     if not images_record:
-        raise Exception('no images found to insert into database')
-    
-    async for db_session in get_db():
-        async with db_session.begin():
-            try:
-                response = await upsert_image_metadata_DB(db_session=db_session,
-                                                            bulk_insert_fields=images_record
-                                                            )
+        raise Exception('No images found to insert into the database')
 
-                if response.get('status')=='success':
-                    await db_session.commit()
-                    return response
-            except Exception as e:
-                    raise Exception(str(e))
+    try:
+        with celery_sync_session() as db_session:
+            response = insert_image_metadata(
+                db_session=db_session,
+                bulk_insert_fields=images_record,
+                model=ImagesMetaData
+            )
+            if response.get('status') == 'COMPLETED':
+                folder = db_session.scalar(select(CullingFolder).where(
+                    CullingFolder.id == folder_id,
+                ))
+                
+                # Check if folder exists
+                if folder:
+                    # updating folder data
+                    folder.culling_done = True
+                    folder.culling_in_progress = False
+                    
+                    # deleting temp images record
+                    db_session.execute(delete(TemporaryImageURL).where(
+                        TemporaryImageURL.culling_folder_id == folder_id
+                    ))
+                else:
+                    # Handle case where user is not found, e.g., log an error or raise an exception
+                    print(f"folder with id {folder} not found.")
+                
+                    
+                db_session.commit()
+                return response
+
+    except Exception as e:
+        print(f"Error during bulk insert: {e}")
+        raise
         
 
 #---------------------Independenst Task For Culling------------------------------------------------
@@ -74,12 +98,22 @@ def get_images_from_aws(self, uploaded_images_url:list):
             })
             progress = ((index + 1) / len(uploaded_images_url)) * 100
             self.update_state(state='PROGRESS', meta={"progress": progress, "info": "Getting images to process"})
+            time.sleep(0.1)
+        
+    self.update_state(state='SUCCESS', meta={"progress": 100, "info": "Images retrieved successfully"})
+    # time.sleep(0.8)
     
     return images
 
 #This task is used to separate blur images and upload them to aws server and finally return non-blur images, blur images metadata
 @celery.task(name='blur_image_separation', bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={'max_retries':3}, queue='culling')
 def blur_image_separation(self, images, user_id:str, folder:str, folder_id:int):
+    
+    print()
+    print()
+    print()
+    print("total images received", len(images))
+    
     # Validation
     if not folder or not folder_id:
         raise ValueError("Invalid folder or folder_id. Both must be provided.")
@@ -101,29 +135,35 @@ def blur_image_separation(self, images, user_id:str, folder:str, folder_id:int):
 @celery.task(name='closed_eye_separation', bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={'max_retries': 3}, queue='culling')
 def closed_eye_separation(self, output_from_blur:dict, user_id:str, folder:str, folder_id:int):
     non_blur_images = output_from_blur.get('non_blur_images')
-    blurred_metadata = output_from_blur.get('images_metadata')
+    images_metadata = output_from_blur.get('images_metadata')
 
-    if len(non_blur_images)==0 and len(blurred_metadata)!=0:
-        self.update_state(state='PROGRESS', meta={'progress': 100, 'info': "Closed eye images separation completed!"})
-        time.sleep(1)
+    if len(non_blur_images)==0 and len(images_metadata)!=0:
+        self.update_state(state='SUCCESS', meta={'progress': 100, 'info': "Closed eye images separation completed!"})
+        # time.sleep(1)
         return {
             'status': 'closed_eye_warning',
             'message': "No images were found to detect closed eye, only blurred images were processed.",
-            'blurred_metadata': blurred_metadata
+            'images_metadata': images_metadata
         }
     
-    if len(non_blur_images)==0 and len(blurred_metadata)==0:
+    if len(non_blur_images)==0 and len(images_metadata)==0:
         return {
-            'status': 'error',
+            'status': 'FAILURE',
             'message': 'Error occurred in culling'
         }
+    
+    print()
+    print()
+    print()
+    print("blur images len", len(images_metadata))
+    print("non blur images len", len(non_blur_images))
     
     closed_eye_detect_obj = ClosedEyeDetection(
         S3_util_obj=s3_utils,
         root_folder=user_id,
         inside_root_main_folder=folder,
     )
-    result = asyncio.run(closed_eye_detect_obj.separate_closed_eye_images_and_upload_to_s3(     prev_image_metadata=blurred_metadata,
+    result = asyncio.run(closed_eye_detect_obj.separate_closed_eye_images_and_upload_to_s3(     prev_images_metadata=images_metadata,
                                                                                                 images=non_blur_images, 
                                                                                                 task=self, 
                                                                                                 folder_id=folder_id
@@ -136,19 +176,24 @@ def duplicate_image_separation(self, output_from_closed_eye:dict, user_id:str, f
     if output_from_closed_eye.get('status') == 'error':
         return(output_from_closed_eye.get('message'))
     
-    if output_from_closed_eye.get('status') == 'warning':
+    if output_from_closed_eye.get('status') == 'closed_eye_warning':
         return output_from_closed_eye
     
-    if output_from_closed_eye.get('status')=='success':
-        if not output_from_closed_eye.get('open_eye_images', []) and output_from_closed_eye.get('images_metadata', []):
-            self.update_state(state='PROGRESS', meta={'progress': 100, 'info': "Duplicate images separation completed!"})
-            time.sleep(1)
+    if output_from_closed_eye.get('status')=='SUCCESS':
+        if not output_from_closed_eye.get('open_eye_images') and output_from_closed_eye.get('images_metadata'):
+            self.update_state(state='SUCCESS', meta={'progress': 100, 'info': "Duplicate images separation completed!"})
+            # time.sleep(1)
             return {
-                'status': 'blur_image_warning',
-                'message': "No images were found to detect duplicate, only closed eye and blurred images were processed.",
-                'closed_eye_metadata': output_from_closed_eye.get('closed_eye_metadata', [])
+                'status': 'duplicate_images_warning',
+                'message': "No images were found to detect duplicate, only closed eye and blurred images are processed.",
+                'images_metadata': output_from_closed_eye.get('images_metadata')
             }
-        
+    print()
+    print()
+    print()
+    print("closed eye detected images len", len(output_from_closed_eye.get('images_metadata')))
+    print("non closed eye images len", len(output_from_closed_eye.get('open_eye_images')))
+    
     result = asyncio.run(separate_duplicate_images(prev_image_metadata=output_from_closed_eye.get('images_metadata'),
                                                    folder_id=folder_id,
                                                    root_folder=user_id,
@@ -157,38 +202,50 @@ def duplicate_image_separation(self, output_from_closed_eye:dict, user_id:str, f
                                                    task=self,
                                                    images=output_from_closed_eye.get('open_eye_images')
                                                     ))
+    
+    print()
+    print()
+    print('all images metadata len',len(result.get('images_metadata')))
     return result
+    
 
 
 #This task is use to bulk save images metadata into database
-@celery.task(name='bulk_save_image_metadata', bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={'max_retries': 3}, queue='culling') 
-def bulk_save_image_metadata_db(self, culled_metadata:dict):
+@celery.task(name='bulk_save_image_metadata_db', bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={'max_retries': 3}, queue='culling')
+def bulk_save_image_metadata_db(self, culled_metadata: dict, folder_id:str):
     try:
+        # Check for error status in culled_metadata
         if culled_metadata.get('status') == 'error':
-            raise Exception(images_metadata.get('message'))
-        
-        # Handle cases where blurred metadata is present
-        if culled_metadata.get('status') == 'closed_eye_warning':
-            blurred_metadata = culled_metadata.get('blurred_metadata', [])
-            if blurred_metadata:
-                # Save only the blurred metadata to the database
-                return asyncio.run(bulk_save(images_record=blurred_metadata))
-        
-        # Handle cases where only blur and closed eye metadata were present
-        if culled_metadata.get('status') == 'blur_image_warning':
-            closed_eye_metadata = culled_metadata.get('closed_eye_metadata', [])
-            if closed_eye_metadata:
-                # Save only the closed_eye_ provided to the database
-                return asyncio.run(bulk_save(images_record=closed_eye_metadata))
+            raise Exception(culled_metadata.get('message'))
 
-        #Lastly save all metadata to database
-        if culled_metadata.get('status') == 'success':
-            images_metadata = culled_metadata.get('images_metadata')
-            if images_metadata:
-                return asyncio.run(bulk_save(images_record=images_metadata))
+        images_to_save = None
+
+        # Decide which metadata to save based on the status
+        if culled_metadata.get('status') == 'closed_eye_warning':
+            images_to_save = culled_metadata.get('images_metadata')
+            print("meta data from closed eye warning", images_to_save)
+        elif culled_metadata.get('status') == 'duplicate_images_warning':
+            print("meta data from duplicate_images_warning", images_to_save)
+            images_to_save = culled_metadata.get('images_metadata')
+        elif culled_metadata.get('status') == 'SUCCESS':
+            print("SUCCESS METADATA", images_to_save)
+            images_to_save = culled_metadata.get('images_metadata')
+
+        # Ensure there's metadata to save
+        if images_to_save:
+            response = bulk_save(images_record=images_to_save, folder_id=folder_id)
+            self.update_state(state='SUCCESS', meta={'progress': 100, 'info': "Images save to database successfully!"})
+            # time.sleep(1)
+            return response
+
+        return {
+            "status": "NO_DATA",
+            "message": "No metadata available to save to the database"
+        }
 
     except Exception as e:
-        raise e
+        print(f"Error in bulk_save_image_metadata_db: {str(e)}")
+        raise
     
 # @celery.task_done(name='del_before_cull_images', bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={'max_retries': 3}, queue='culling')
 # def del_before_cull_images(self, response_from_database:dict, user_id:str, folder:str):
@@ -205,7 +262,7 @@ def bulk_save_image_metadata_db(self, culled_metadata:dict):
 
 #-----------------------Chaining All Above Task Here----------------------------------
 @celery.task(name='culling_task', bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={'max_retries':5}, queue='culling')
-def culling_task(self, user_id:str, uploaded_images_url, folder:str, folder_id:int):
+def culling_task(self, user_id:str, uploaded_images_url, folder:str, folder_id:str):
 
     self.update_state(state='STARTED', meta={'status': 'Task started'})
     task_ids=[]
@@ -216,8 +273,7 @@ def culling_task(self, user_id:str, uploaded_images_url, folder:str, folder_id:i
             blur_image_separation.s(user_id, folder, folder_id),
             closed_eye_separation.s(user_id, folder, folder_id),
             duplicate_image_separation.s(user_id, folder, folder_id),
-            bulk_save_image_metadata_db.s(),
-            # del_before_cull_images.s()
+            bulk_save_image_metadata_db.s(folder_id),
         ) 
 
         result = chain_result.apply_async()
@@ -239,7 +295,7 @@ def culling_task(self, user_id:str, uploaded_images_url, folder:str, folder_id:i
         self.update_state(state='FAILURE', meta={'status': f"Unexpected error: {str(e)}", 'task_ids': task_ids})
         raise
 
-    return JSONResponse(task_ids)
+    return {'task_ids': task_ids}
 
 
 

@@ -12,3 +12,9 @@ class UnauthorizedAccess(Exception):
     def __init__(self, message="The AWS Access Key Id you provided does not exist in our records."):
         self.message = message
         super().__init__(self.message)
+        
+
+# for s3
+class FolderAlreadyExistsException(Exception):
+    """Exception raised when a folder already exists."""
+    pass

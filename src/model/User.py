@@ -1,41 +1,54 @@
-from datetime import timezone
+import uuid
 from config.Database import Base
-from sqlalchemy import ForeignKey, DateTime, func
+from sqlalchemy import DateTime, func, UUID
 from sqlalchemy.orm import relationship
 from sqlalchemy.orm import mapped_column, Mapped
 from typing import List,TYPE_CHECKING
 from datetime import datetime
+from sqlalchemy import JSON
 
 if TYPE_CHECKING:
-    from model.FolderInS3 import FoldersInS3
-    from model.ImagesMetaData import ImagesMetaData
+    from model.CullingFolders import CullingFolder
+    from model.SmartShareFolders import SmartShareFolder
+    from model.EventArrangmentForm import EventArrangmentForm
+    from model.AssociationTable import SmartShareFoldersSecondaryUsersAssociation
+
 
 class User(Base):
     __tablename__ = "users"
     id: Mapped[str] = mapped_column(primary_key=True, index=True)
+    username:Mapped[str] = mapped_column(nullable=True)
+    first_name:Mapped[str] = mapped_column(nullable=True)
+    last_name:Mapped[str] = mapped_column(nullable=True)
+    profile_image_url: Mapped[str] = mapped_column(default=None)
     email: Mapped[str] = mapped_column(unique=True, index=True, nullable=False)
-    name: Mapped[str] = mapped_column(nullable=False)
     email_verified: Mapped[bool] = mapped_column(nullable=False, default=False)
-    picture: Mapped[str] = mapped_column(default=None)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    phone_numbers:Mapped[List[str]] = mapped_column(JSON, nullable=True)
+    session_created_at:Mapped[datetime]  = mapped_column(DateTime(timezone=True), server_default=func.now())
+    session_last_active_at:Mapped[datetime]  = mapped_column(DateTime(timezone=True), server_default=func.now())
     total_culling_storage_used: Mapped[float] = mapped_column(default=0.0)
     total_image_share_storage_used: Mapped[float] = mapped_column(default=0.0)
 
     # Relationships with user
-    tokens: Mapped[List["Token"]] = relationship(back_populates="user", cascade="all, delete-orphan")
-    images: Mapped[List["ImagesMetaData"]] = relationship(back_populates="owner", cascade="all, delete-orphan")
-    folders: Mapped[List["FoldersInS3"]] = relationship(back_populates="created_by", cascade="all, delete-orphan")
+    culling_folders: Mapped[List["CullingFolder"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    smart_share_folders: Mapped[List["SmartShareFolder"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    event_arrangment_form: Mapped[List["EventArrangmentForm"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    
+    # Relationship back to the association table
+    smart_share_folder_association:Mapped[List["SmartShareFoldersSecondaryUsersAssociation"]] = relationship(back_populates="user", cascade="all,delete-orphan")
 
-class Token(Base):
-    __tablename__ = 'tokens'
 
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    access_token: Mapped[str] = mapped_column(nullable=False)
-    refresh_token: Mapped[str] = mapped_column(nullable=False)
-    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
-    user_id: Mapped[str] = mapped_column(ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
-
-    #relationship with user
-    user: Mapped["User"] = relationship(back_populates="tokens")
+# class SecondaryUser(Base):
+#     __tablename__ = "secondary_user"
+    
+#     user_id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, nullable=False, default=uuid.uuid4)
+#     first_name:Mapped[str] = mapped_column(nullable=False)
+#     last_name:Mapped[str] = mapped_column(nullable=False)
+#     email:Mapped[str] = mapped_column(nullable=False)
+#     phone:Mapped[str] = mapped_column(default=None)
+#     # access_at:Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+   
+#     # Relationship back to the association table
+#     smart_share_folder_association:Mapped[List["SmartShareFoldersSecondaryUsersAssociation"]] = relationship(back_populates="secondary_user", cascade="all,delete-orphan")
+   
+    

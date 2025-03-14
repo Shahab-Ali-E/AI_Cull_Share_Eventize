@@ -1,4 +1,3 @@
-import os
 from functools import lru_cache
 from kombu import Queue
 from config.settings import get_settings
@@ -24,9 +23,12 @@ class BaseConfig:
         # custom queue
         Queue("culling"),
         Queue("smart_sharing"),
+        Queue("email")
     )
 
     CELERY_TASK_ROUTES = (route_task,)
+
+
 
 
 class DevelopmentConfig(BaseConfig):
@@ -34,7 +36,7 @@ class DevelopmentConfig(BaseConfig):
 
 
 @lru_cache()
-def get_settings():
+def celery_get_settings():
     config_cls_dict = {
         "development": DevelopmentConfig,
     }

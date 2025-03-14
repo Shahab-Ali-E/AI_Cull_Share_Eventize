@@ -9,6 +9,14 @@ from urllib.parse import quote_plus
 env_path = Path(".") / ".env"
 load_dotenv(dotenv_path=env_path)
 
+# Get the project root directory (2 levels up from this file)
+PROJECT_ROOT = Path(__file__).parent.parent.parent
+# models path
+BASE_PATH = str(PROJECT_ROOT / "Ml_Models")
+BLUR_IMAGE_DETECTION_MODEL_PATH = os.path.join(BASE_PATH, "Tf_Blur_Model")
+CLOSED_EYE_DETECTION_MODEL_PATH = os.path.join(BASE_PATH, "Tf_Closed_Eye_Model")
+
+
 class Settings(BaseSettings):
 
     # App
@@ -19,21 +27,40 @@ class Settings(BaseSettings):
     MAX_SMART_CULL_MODULE_STORAGE:int = os.environ.get('MAX_SMART_CULL_MODULE_STORAGE',100000000)
     MAX_SMART_SHARE_MODULE_STORAGE:int = os.environ.get('MAX_SMART_SHARE_MODULE_STORAGE',100000000)
     
+    # Mail configuration
+    MAIL_USERNAME:str = os.environ.get('MAIL_USERNAME',None)
+    MAIL_PASSWORD:str = os.environ.get('MAIL_PASSWORD',None)
+    MAIL_SERVER:str = os.environ.get('MAIL_SERVER',None)
+    MAIL_PORT:int = os.environ.get('MAIL_PORT',None)
+    MAIL_FROM:str = os.environ.get('MAIL_FROM',None)
+    MAIL_FROM_NAME:str = os.environ.get('MAIL_FROM_NAME',None)
+    
     # FrontEnd Application
     FRONTEND_HOST: str = os.environ.get("FRONTEND_HOST", "http://localhost:3000")
 
     # MySql Database Config
     POSTGRES_HOST: str = os.environ.get("POSTGRES_HOST", 'localhost')
-    POSTGRES_USER: str = os.environ.get("POSTGRES_USER", None)
-    POSTGRES_PASS: str = os.environ.get("POSTGRES_PASSWORD", None)
+    POSTGRES_USER: str = os.environ.get("POSTGRES_USER", "")
+    POSTGRES_PASS: str = os.environ.get("POSTGRES_PASSWORD", "")
     POSTGRES_PORT: int = int(os.environ.get("POSTGRES_PORT", 5432))
-    POSTGRES_DB: str = os.environ.get("POSTGRES_DB", None)
-    DATABASE_URI: str = f"postgresql+asyncpg://{POSTGRES_USER}:%s@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}" % quote_plus(POSTGRES_PASS)
+    POSTGRES_DB: str = os.environ.get("POSTGRES_DB", "")
+    
+    if not POSTGRES_PASS:
+        raise ValueError("POSTGRES_PASSWORD environment variable is not set or is empty.")
+    # Async URI for standard async operations
+    DATABASE_URI: str = f"postgresql+asyncpg://{POSTGRES_USER}:{quote_plus(POSTGRES_PASS)}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}"
 
+    # Sync URI specifically for Celery synchronous tasks
+    SYNC_DATABASE_URI: str = f"postgresql://{POSTGRES_USER}:{quote_plus(POSTGRES_PASS)}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}"
+    
     #QDRANT Database Config
     QDRANT_API_KEY:str = os.environ.get('QDRANT_API_KEY',None)
     QDRANT_ENDPOINT_URL:str = os.environ.get('QDRANT_ENDPOINT_URL',None)
 
+    # Clerk secret key
+    CLERK_SECRET_KEY:str = os.environ.get('CLERK_SECRET_KEY',None)
+    CLERK_JWKS_URL:str = os.environ.get('CLERK_JWKS_URL',None)
+    CLERK_ISSUER:str = os.environ.get('CLERK_ISSUER',None)
     # encoded_password:str = quote_plus(POSTGRES_PASS)#Propely encode password due @ is a special symbol symbol
     # DATABASE_URI: str = f"postgresql://{POSTGRES_USER}:{encoded_password}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}"
 
@@ -73,20 +100,20 @@ class Settings(BaseSettings):
     #AI MODELS CONFIG
     #BLUR IMAGE DETECTION MODEL
     FEATURE_EXTRACTOR : str = os.environ.get("FEATURE_EXTRACTOR",None)
-    BLUR_VIT_MODEL: str = os.environ.get("BLUR_IMAGE_DETECTION_MODEL_PATH",None)
+    BLUR_IMAGE_DETECTION_MODEL: str = BLUR_IMAGE_DETECTION_MODEL_PATH
     #CLOSED EYE DETECTIO MODEL
-    CLOSED_EYE_DETECTION_MODEL : str = os.environ.get("CLOSED_EYE_DETECTION_MODEL",None)
-    FACE_CASCADE_MODEL: str = os.environ.get("FACE_CASCADE_MODEL",None)
+    CLOSED_EYE_DETECTION_MODEL : str = CLOSED_EYE_DETECTION_MODEL_PATH
+    # FACE_CASCADE_MODEL: str = os.environ.get("FACE_CASCADE_MODEL",None)
     #FACE_EMBEDDING_GENERATOR_MODEL
     FACE_EMBEDDING_GENERATOR_MODEL:str = os.environ.get('FACE_EMBEDDING_GENERATOR_MODEL',None)
     #Threshold values for face comparision
     FACE_COMPARE_THRESHOLD:float = os.environ.get('FACE_COMPARE_THRESHOLD',None)
     #Threshold value for duplicate image detection
-    BLUR_IMAGE_THRESHOLD:int = os.environ.get('BLUR_IMAGE_THRESHOLD',None)
+    BLUR_IMAGE_THRESHOLD:float = os.environ.get('BLUR_IMAGE_THRESHOLD',None)
 
     #CELERY VARIABLES
     CELERY_BROKER_URL:str = os.environ.get("CELERY_BROKER_URL",None)
-    CELERY_RESULT_BACKEND_URL:str = os.environ.get("CELERY_RESULT_BACKEND_URL","redis://127.0.0.1:6379/0")
+    CELERY_RESULT_BACKEND_URL:str = f"db+{SYNC_DATABASE_URI}"
     WORKER_CONCURRENCY :int = os.environ.get("WORKER_CONCURRENCY",1)
     CELERY_WORKING_ENV_CONFIG:str = os.environ.get("CELERY_WORKING_ENV_CONFIG","development")
 

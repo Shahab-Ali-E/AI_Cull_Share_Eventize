@@ -1,18 +1,30 @@
-from fastapi import APIRouter, HTTPException,status,Depends,UploadFile,File,Request
+from datetime import datetime, timezone
+from typing import List, Optional
+from uuid import UUID, uuid4
+
+from fastapi import (APIRouter, Depends, File, HTTPException, Query, Request,
+                     UploadFile, status)
 from fastapi.responses import JSONResponse
-from dependencies.core import DBSessionDep
+from sqlalchemy import asc, desc, func
+from sqlalchemy.future import select
+
 from config.security import validate_images_and_storage
-from model.User import User
-from model.FolderInS3 import FoldersInS3
-from schemas.ImageTaskData import ImageTaskData
-from dependencies.user import get_user
-from services.Culling.createFolderInS3 import create_folder_in_S3
 from config.settings import get_settings
+from dependencies.core import DBSessionDep
+from dependencies.user import get_user
+from model.CullingFolders import CullingFolder
+from model.CullingImagesMetaData import ImagesMetaData, TemporaryImageURL
+from model.User import User
+from schemas.FolderMetaDataResponse import CullingFolderMetaDataById, CullingsResponse, TemporaryImageURLResponse, UploadCullingImagesResponse
+from schemas.ImageMetaDataResponse import CulledImagesMetadataResponse
+from schemas.ImageTaskData import ImageTaskData
+from services.Culling.createFolderInS3 import create_folder_in_S3
 from services.Culling.deleteFolderFromS3 import delete_s3_folder_and_update_db
 from services.Culling.pre_cull_img_processing import pre_cull_image_processing
-from utils.S3Utils import S3Utils
 from services.Culling.tasks.cullingTask import culling_task
-from sqlalchemy.future import select
+from utils.S3Utils import S3Utils
+from utils.UpdateUserStorage import update_user_storage_in_db
+from utils.UpsertMetaDataToDB import upsert_folder_metadata_DB
 
 router = APIRouter(
     prefix='/culling',
@@ -30,6 +42,264 @@ s3_utils = S3Utils(aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
                     aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
                     bucket_name=settings.AWS_BUCKET_SMART_CULL_NAME,
                     aws_endpoint_url=settings.AWS_ENDPOINT_URL)
+
+
+
+@router.get("/get_all_folder", response_model=CullingsResponse)
+async def get_all_folders(
+    db_session:DBSessionDep, 
+    user:User = Depends(get_user),
+    limit: int = Query(10, ge=1, le=100, description="Limit number of folders to retrieve"),
+    page: int = Query(1, ge=1, description="Page number (starting from 1)"),
+    search: Optional[str] = Query(None, description="Search by folder name"),
+    sort_by: Optional[str] = Query("created_date", description="Sort by size, name, or created_date"),
+    sort_order: Optional[str] = Query("asc", description="Sort order: asc or desc")
+
+    ):
+    """
+        📂 **Retrieve All Folders in S3** 📂
+
+        This endpoint allows you to **fetch a list of folders** stored in S3 associated with the authenticated user. You can customize your results with pagination, sorting, and searching capabilities. For example, you can retrieve folders by their name or sort them by size, name, or creation date. 
+
+        ### Parameters:
+        - **`limit`** *(int, optional)*: The maximum number of folders to retrieve. Defaults to `10`. Specify a value between `1` and `100`.
+        - **`page`** *(int, optional)*: The number of folders to skip in the result set. Defaults to `0`.
+        - **`search`** *(str, optional)*: A string to filter folders by name. Returns only those folders whose names contain the specified substring.
+        - **`sort_by`** *(str, optional)*: The field by which to sort the results. Acceptable values are `size`, `name`, and `created_date`. Defaults to `created_date`.
+        - **`sort_order`** *(str, optional)*: The order in which to sort the results. Specify `asc` for ascending or `desc` for descending order. Defaults to `asc`.
+        - **`user`**: The user making the request, obtained through dependency injection to ensure authorized access.
+        - **`db_session`**: The database session used to execute queries for fetching folders.
+
+        ### Responses:
+        - 📃 **200 OK**: **Success!** A list of folders is returned based on the provided parameters.
+        - ⚠️ **401 Unauthorized or 403 Forbidden**: **Error!** The user is not authorized to access this resource.
+        - ⚠️ **500 Internal Server Error**: **Error!** An unexpected error occurred while fetching folders.
+    """
+
+    user_id = user.get('id')
+   
+    # Base query to fetch all folders
+    query = select(CullingFolder).where(
+        CullingFolder.user_id == user_id
+    )
+
+    # Apply search filter if provided
+    if search:
+        query = query.where(CullingFolder.name.ilike(f"%{search}%"))
+
+    # Sorting logic
+    if sort_by == "size":
+        order_by_column = CullingFolder.total_size
+    elif sort_by == "name":
+        order_by_column = CullingFolder.name
+    else:
+        order_by_column = CullingFolder.created_at
+
+    # Sorting direction
+    query = query.order_by(desc(order_by_column) if sort_order == "desc" else asc(order_by_column))
+
+    # Apply pagination
+    offset_value = limit * (page-1)
+    paginated_query = query.limit(limit).offset(offset_value)
+    
+    # Count query
+    count_query = select(func.count()).select_from(query.subquery())
+
+    async with db_session.begin():
+        try:
+            # Execute paginated query
+            paginated_result = await db_session.scalars(paginated_query)
+            folders = paginated_result.all()
+
+            # Execute count query
+            total_count_result = await db_session.scalar(count_query)
+            total_count = total_count_result or 0
+
+            return {
+                "total_count": total_count,
+                "folders": folders,
+            }
+        
+        except Exception as e:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+     
+
+@router.get("/get_folder_id/{folder_id}", response_model=CullingFolderMetaDataById)
+async def get_folder_by_id(
+    request: Request,
+    db_session: DBSessionDep,
+    folder_id: UUID,
+    user: User = Depends(get_user)
+):
+    """
+        📁 **Retrieve a Specific Folder by ID** 📁
+
+        This endpoint allows you to **fetch details of a specific folder** stored in S3 using its unique identifier. You can only access folders associated with your user account, ensuring that sensitive data remains secure.
+
+        ### Parameters:
+        - **`folder_id`** *(UUID)*: The unique identifier of the folder you wish to retrieve.
+        - **`request`**: Contains session details required for authentication and execution.
+        - **`user`**: The user making the request, obtained through dependency injection to ensure authorized access.
+        - **`session`**: The database session used to execute queries for fetching the folder.
+
+        ### Responses:
+        - 📃 **200 OK**: **Success!** The folder details are returned.
+        - ⚠️ **401 Unauthorized**: **Error!** The user is not authorized to access this resource.
+        - ⚠️ **404 Not Found**: **Error!** The specified folder does not exist.
+        - ⚠️ **500 Internal Server Error**: **Error!** An unexpected error occurred while fetching the folder.
+    """
+
+    user_id = user.get('id') #"user_2pqOmYikrXY1pWefuBuqzRGm3vA"
+   
+    async with db_session.begin():
+        try:
+            # Query to get the folder by ID and user ID
+            folder = await db_session.scalar(
+                select(CullingFolder).where(
+                    CullingFolder.id == folder_id,
+                    CullingFolder.user_id == user_id,
+                )
+            )
+
+            # Check if folder exists
+            if folder is None:
+                return JSONResponse(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    content=f'Folder with id {folder_id} not found!'
+                )
+            
+            # Query to get the temporary images urls
+            temp_urls = (await db_session.scalars(select(TemporaryImageURL).where(TemporaryImageURL.culling_folder_id == folder_id))).all()
+            updated_urls = []
+            
+            for data in temp_urls:
+                validity_time = data.validity
+                current_time = datetime.now(timezone.utc)
+                
+                if current_time < validity_time:
+                    updated_urls.append(TemporaryImageURLResponse(
+                        id=data.id,
+                        name=data.name,
+                        file_type=data.file_type,
+                        image_download_path=data.url,
+                        image_download_validity=validity_time
+                    ))
+                else:
+                    await db_session.delete(data)  # Remove invalid URLs
+
+            await db_session.commit()
+            
+            # Return the response using the Pydantic model
+            return CullingFolderMetaDataById(
+                id=folder.id,
+                name=folder.name,
+                created_at=folder.created_at,
+                total_size=folder.total_size,
+                culling_done=folder.culling_done,
+                culling_in_progress=folder.culling_in_progress,
+                temporary_images_urls=updated_urls
+            )
+
+        except HTTPException as e:
+            raise HTTPException(status_code=e.status_code, detail=str(e))
+        except Exception as e:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+        
+
+@router.get('/culled_images_metadata/{folder_id}/{detection_status}', response_model=List[CulledImagesMetadataResponse])
+async def get_culled_images_metadata(
+    folder_id: UUID,
+    request: Request,
+    db_session: DBSessionDep,
+    user: User = Depends(get_user),
+    detection_status: Optional[str] = None
+):
+    """
+    **Retrieve Culled Images Metadata**
+
+    This endpoint retrieves **Culled Images Metadata** for images within a specific folder, optionally filtered by their `detection_status`.
+    You can use this endpoint to access images temporarily for culling purposes. Only images that are valid and not expired will be returned, ensuring efficient access without issues.
+
+    ### Parameters:
+    - **`folder_id`** *(UUID)*: The unique identifier of the folder from which to retrieve metadata.
+    - **`detection_status`** *(Optional[str])*: The status of the image detection to filter by. Options are:
+      - `Blur`
+      - `Duplicate`
+      - `Closed Eye`
+      - `Fine`
+      If omitted, all images within the folder are returned.
+    - **`request`**: Contains session details required for authentication and execution.
+    - **`user`**: The user making the request, obtained through dependency injection to ensure authorized access.
+    - **`session`**: The database session used to execute queries for fetching presigned URLs.
+
+    ### Responses:
+    - 📃 **200 OK**: **Success!** A list of valid presigned URLs for the images is returned.
+    - ⚠️ **401 Unauthorized**: **Error!** The user is not authorized to access this resource.
+    - ⚠️ **404 Not Found**: **Error!** The specified folder does not exist.
+    - ⚠️ **500 Internal Server Error**: **Error!** An unexpected error occurred while fetching presigned URLs.
+    """
+    # Check for user authentication
+    user_id = user.get('id')
+   
+    # Find the folder if it exists
+    async with db_session.begin():
+        try:
+            # Query to get the folder by ID and user ID to check whether the folder exists
+            folder = await db_session.scalar(
+                select(CullingFolder).where(
+                    CullingFolder.id == folder_id,
+                    CullingFolder.user_id == user_id,
+                )
+            )
+
+            # Check if folder exists
+            if folder is None:
+                return JSONResponse(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    content=f'Folder with id {folder_id} not found!'
+                )
+            # Construct base query for images metadata
+            query = select(ImagesMetaData).where(
+                ImagesMetaData.culling_folder_id == folder.id,
+                ImagesMetaData.detection_status == detection_status
+            )
+
+            # Execute query to get culled images metadata
+            culled_images_metadata = (await db_session.scalars(query)).all()
+            return culled_images_metadata
+
+        except HTTPException as e:
+            raise HTTPException(status_code=e.status_code, detail=str(e))
+        except Exception as e:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+   
+@router.get('/download_images/{folder_id}')
+async def download_folder(folder_id:UUID, request:Request, db_session: DBSessionDep, user:User = Depends(get_user)):
+    user_id = user.get('id')
+   
+    async with db_session.begin():
+        try:
+            folder_data = (await db_session.execute(select(CullingFolder).where(
+                                                                                CullingFolder.id == folder_id,
+                                                                                CullingFolder.user_id == user_id
+                                                                                )))
+            folder_data = folder_data.scalar_one_or_none()
+            if not folder_data:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f'Could not find folder with {folder_id} in culling module')
+            
+            # path where all culling folder data 
+            folder_path = f"{user_id}/{folder_data.name}"
+            s3 = await s3_utils.download_s3_folder(prefix=folder_path)
+
+            return s3
+
+        except HTTPException as e:
+            await db_session.rollback()
+            raise HTTPException(status_code=e.status_code, detail=str(e))
+        except Exception as e:
+            await db_session.rollback()
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 
 @router.post('/create_directory/{dir_name}', status_code=status.HTTP_201_CREATED)
@@ -55,10 +325,17 @@ async def create_directory(dir_name:str, request:Request,  db_session: DBSession
     - ⚠️ **500 Internal Server Error**: **Error!** Something went wrong during the folder creation process. This might be due to issues with S3 or database access.
     """
 
-    user_id = request.session.get('user_id')
-    if not user_id:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='unauthorized access !')   
+    user_id = user.get('id')
+   
+    storage_used = user.get('total_culling_storage_used')
     
+    # validate user storage
+    if storage_used == settings.MAX_SMART_CULL_MODULE_STORAGE:
+        return JSONResponse(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    content=f'Storage full !'
+                )
+       
     async with db_session.begin():
         try:
             response =  await create_folder_in_S3(dir_name=dir_name.lower(), s3_utils_obj=s3_utils, db_session=db_session, user_id=user_id)
@@ -72,10 +349,8 @@ async def create_directory(dir_name:str, request:Request,  db_session: DBSession
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 
-
-
-@router.post('/upload-images/{folder}', status_code=status.HTTP_202_ACCEPTED)
-async def upload_images(request: Request, folder: str, db_session: DBSessionDep, images: list[UploadFile] = File(...), user: User = Depends(get_user)):
+@router.post('/upload_images/{folder_id}', status_code=status.HTTP_202_ACCEPTED, response_model=UploadCullingImagesResponse)
+async def upload_images(request: Request, folder_id: str, db_session: DBSessionDep,user: User = Depends(get_user), images: list[UploadFile] = File(...)):
     """
     📸 **Upload Images to S3 and Initiate Background Culling Task** 📸
 
@@ -101,77 +376,113 @@ async def upload_images(request: Request, folder: str, db_session: DBSessionDep,
     - ⚠️ **500 Internal Server Error**: An unexpected error occurred during the processing. This could be due to issues with S3, the database, or the task dispatching system.
     """
     try:
-        
-        user_id = request.session.get("user_id")
-        if not user_id:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='unauthorized access !') 
-        folder = folder.lower()
-
-        async with db_session.begin(): 
-            # Checking if the folder exists in the database
+        user_id = user.get('id')
+      
+        # Begin a single transaction for the entire process
+        async with db_session.begin():
+            # Validate folder
             folder_data = await db_session.execute(
-                                                    select(FoldersInS3).where(
-                                                        FoldersInS3.name == folder,
-                                                        FoldersInS3.module == settings.APP_SMART_CULL_MODULE
-                                                    )
-                                                )
+                select(CullingFolder).where(
+                    CullingFolder.id == folder_id,
+                    CullingFolder.user_id == user_id
+                )
+            )
             folder_data = folder_data.scalar_one_or_none()
             if not folder_data:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f'Could not find folder with {folder} in culling module')
-
-            # Validation if combined size of images is greater than available size and check image validation
+                return JSONResponse(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    content=f'Folder with id {folder_id} not found!'
+                )
+                
+            # Validate images and storage
             storage_used = await db_session.execute(
                 select(User.total_culling_storage_used).where(User.id == user_id)
             )
             storage_used = storage_used.scalar_one_or_none()
-            
-            is_valid, output = await validate_images_and_storage(
-                                                                    files=images, 
-                                                                    max_uploads=20, 
-                                                                    max_size_mb=100,
-                                                                    max_storage_size=settings.MAX_SMART_CULL_MODULE_STORAGE,
-                                                                    db_storage_used=storage_used
-                                                                )
+
+            is_valid, output_validated_storage = await validate_images_and_storage(
+                files=images, max_uploads=1000, max_size_mb=100, db_storage_used=storage_used
+            )
+
             if not is_valid:
-                raise HTTPException(status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, detail=output)
+                return JSONResponse(
+                    status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+                    content=output_validated_storage
+                )
+               
+            # Process batches
+            batch_size = 50
+            all_presigned_urls = []
+            for i in range(0, len(images), batch_size):
+                batch = images[i:i + batch_size]
+                try:
+                    # Process the batch and append presigned URLs
+                    presigned_urls = await pre_cull_image_processing(
+                        folder=folder_data.name,
+                        images=batch,
+                        s3_utils=s3_utils,
+                        user_id=user_id,
+                        db_session=db_session,
+                        culling_folder_id=folder_id
+                    )
+                    for data in presigned_urls:
+                       all_presigned_urls.append(TemporaryImageURLResponse(
+                           id=uuid4(),
+                           name=data.get('name'),
+                           file_type=data.get('file_type'),
+                           image_download_path=data.get('url'),
+                           image_download_validity=data.get('validity')
+                           ))
+                except Exception as e:
+                    print(f"Error processing batch {i}: {str(e)}")
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail=f"Error processing batch {i}: {str(e)}"
+                    )
             
-            # Uploading image to S3, updating metadata in database, and returning presigned URL
-            response = await pre_cull_image_processing(
-                                                        folder=folder,
-                                                        images=images,
-                                                        s3_utils=s3_utils,
-                                                        db_session=db_session,
-                                                        total_image_size=output,
-                                                        user_id=user_id
-                                                    )
+            print(f'\n\n\n\n\n all presinged urls {all_presigned_urls}')
             
-            # if isinstance(response, dict):  # Ensure response is serializable
-            #     return response
-            #commiting database changes if everythig is successfull
-            # storage_used =  (await db_session.scalars(select(User.total_culling_storage_used).where(User.id == user_id))).first().a2b_hex('dasda')
-            await db_session.commit()
-            return response
-    
-    except HTTPException as e:
-        await db_session.rollback()
-        # Handle unexpected errors
-        raise HTTPException(
-            status_code=e.status_code,
-            detail=f"{str(e)}"
+            # Update folder metadata and user storage in the database
+            updated_folder_storage = folder_data.total_size + output_validated_storage
+            match_criteria = {"id": folder_id, "name": folder_data.name, "user_id": user_id}
+
+            # Update folder metadata
+            await upsert_folder_metadata_DB(
+                db_session=db_session,
+                match_criteria=match_criteria,
+                update_fields={"total_size": updated_folder_storage},
+                model=CullingFolder,
+                update=True
+            )
+
+            # Update user storage
+            is_valid, response = await update_user_storage_in_db(
+                db_session=db_session,
+                total_image_size=output_validated_storage,
+                module=settings.APP_SMART_CULL_MODULE,
+                user_id=user_id,
+                increment=True
+            )
+
+            if not is_valid:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"{response}")
+
+        return UploadCullingImagesResponse(
+            message="Images uploaded successfully",
+            data=all_presigned_urls
         )
-    
+        
+    except HTTPException as e:
+        raise e
     except Exception as e:
-        await db_session.rollback()
-        # Handle unexpected errors
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"An unexpected error occurred: {str(e)}"
         )
 
-
-
+# user: User = Depends(get_user)
 @router.post('/start_culling/', status_code=status.HTTP_102_PROCESSING, response_model=None)
-async def start_culling(request: Request, culling_data: ImageTaskData, db_session: DBSessionDep, user: User = Depends(get_user)):
+async def start_culling(culling_data: ImageTaskData, db_session: DBSessionDep, user: User = Depends(get_user)):
     """
     🔄 **Initiates the Image Culling Process** 🔄
 
@@ -195,31 +506,32 @@ async def start_culling(request: Request, culling_data: ImageTaskData, db_sessio
     - ❓ **404 Not Found**: The specified folder does not exist for the user in the culling module.
     - ⚠️ **500 Internal Server Error**: An unexpected error occurred when sending the task to Celery.
     """
-    user_id = request.session.get("user_id")
-    if not user_id:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='unauthorized access !') 
-
+    
+    user_id = user.get('id')
+   
     async with db_session.begin():
         #get folder data
-        folder_data = (await db_session.scalars(select(FoldersInS3).where(FoldersInS3.name==culling_data.folder_name, 
-                                                                        FoldersInS3.module == settings.APP_SMART_CULL_MODULE, 
-                                                                        FoldersInS3.user_id == user_id))).first()
+        folder_data = (await db_session.scalars(select(CullingFolder).where(CullingFolder.id==culling_data.folder_id, 
+                                                                        CullingFolder.user_id == user_id))).first()
         
-    if not folder_data:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f'Could not find folder with {culling_data.folder_name} in culling module')
-
+        if not folder_data:
+            return JSONResponse(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    content=f'Folder with id {culling_data.folder_id} not found!'
+                )
+            
+        folder_data.culling_in_progress = True
+        db_session.add(folder_data)
+        await db_session.commit()
+        
     #Sending images URL and other info to Celery task
     try:
-        task = culling_task.apply_async(args=[user_id, culling_data.images_url, culling_data.folder_name, folder_data.id])
+        task = culling_task.apply_async(args=[user_id, culling_data.images_url, folder_data.name, folder_data.id])
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Error sending task to Celery: {str(e)}")
 
     return JSONResponse({"task_id": task.id})
 
-
-@router.get("/folder/{folder_name}")
-async def get_folder_by_name(request:Request,folder: str, user:User = Depends(get_user)):
-    pass
 
 @router.delete("/delete-folder/{dir_name}")
 async def delete_folder(dir_name:str, request:Request, db_session: DBSessionDep, user:User = Depends(get_user)):
@@ -241,13 +553,12 @@ async def delete_folder(dir_name:str, request:Request, db_session: DBSessionDep,
     ### Responses:
     - ✅ **200 OK**: The folder has been successfully deleted from S3 and its record removed from the database.
     - ❓ **404 Not Found**: The specified folder or its database record does not exist.
+    - 🔒 **423 Locked**: The specified folder cannot delete if the culling in progress.
     - ⚠️ **500 Internal Server Error**: An unexpected error occurred during the deletion process.
     """
 
-    user_id = request.session.get('user_id')
-    if not user_id:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='unauthorized access !') 
-
+    user_id = user.get('id')
+   
     folder_path = f'{user_id}/{dir_name}/'
     try:
         async with db_session.begin():

@@ -65,18 +65,18 @@ async def separate_blur_images(images:list, root_folder:str, inside_root_main_fo
             except Exception as e:
                 raise Exception(f"Error uploading image to S3: {str(e)}")
             
-            #generating presinged url so user can download image
+            # generating presinged url so user can download image
             key = f"{root_folder}/{inside_root_main_folder}/{upload_image_folder}/{filename}"
             presigned_url = await S3_util_obj.generate_presigned_url(key, expiration=settings.PRESIGNED_URL_EXPIRY_SEC)
 
             image_metadata = {
                 'id': filename,
                 'name': image['name'],
-                'download_path': presigned_url,
                 'file_type': image['content_type'],
-                'link_validity':datetime.now() + timedelta(seconds=settings.PRESIGNED_URL_EXPIRY_SEC),
-                'user_id': root_folder,
-                'folder_id': folder_id
+                'detection_status':'Blur',
+                'image_download_path': presigned_url,
+                'image_download_validity':datetime.now() + timedelta(seconds=settings.PRESIGNED_URL_EXPIRY_SEC),   
+                'culling_folder_id': folder_id
             }
             blurred_metadata.append(image_metadata)
         else:
@@ -88,10 +88,9 @@ async def separate_blur_images(images:list, root_folder:str, inside_root_main_fo
             task.update_state(state='PROGRESS', meta={'progress': progress, 'info': 'Blur image separation processing'})
             
     response = 'Blur ' + response if response == 'image uploaded successfully' else response
-    task.update_state(state='PROGRESS', meta={'progress': 100, 'info': 'Duplicate image separation done!'})
-    time.sleep(1)
+    task.update_state(state='SUCCESS', meta={'progress': 100, 'info': 'Blur image separation done!'})
     return {
-            'status': 'success',
+            'status': 'SUCCESS',
             'non_blur_images': non_blur_images,
             'images_metadata':blurred_metadata,
             's3_response':response

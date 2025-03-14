@@ -1,8 +1,11 @@
 import boto3
+from boto3.s3.transfer import TransferConfig
 from botocore.exceptions import ClientError
 from fastapi import HTTPException,status
 from concurrent.futures import ThreadPoolExecutor
 import asyncio
+
+from utils.CustomExceptions import FolderAlreadyExistsException
 
 class S3Utils:
     """
@@ -20,9 +23,16 @@ class S3Utils:
             endpoint_url=aws_endpoint_url,
             region_name=aws_region,
             aws_access_key_id=aws_access_key_id,
-            aws_secret_access_key=aws_secret_access_key
+            aws_secret_access_key=aws_secret_access_key,
+            config=boto3.session.Config(max_pool_connections=50)
         )
         self.bucket_name = bucket_name
+        self.transfer_config = TransferConfig(
+                                                multipart_threshold=1024 * 1024* 5,  # 5 mb
+                                                max_concurrency=10,                  # 10 threads
+                                                multipart_chunksize=1024 *1024 * 5, # 5 mb chunks
+                                                use_threads=True                     # Multi-threading enabled
+                                            )
         self.executor = ThreadPoolExecutor()
     
     #It check if that folder already exsists which you want to create
@@ -185,7 +195,7 @@ class S3Utils:
             self.create_object(root_folder)
         
         if await self.folder_exists(main_folder):
-            raise Exception(f'Main folder "{main_folder}" already exists.')
+            raise FolderAlreadyExistsException(f'Main folder "{main_folder}" already exists.')
         else:
             await self.create_object(main_folder)
 
@@ -213,7 +223,8 @@ class S3Utils:
             self.create_object(root_folder)
         
         if await self.folder_exists(event_name):
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f'Event with name "{event_name}" already exists.')
+            raise FolderAlreadyExistsException(f'Event with name "{event_name}" already exists.')
+            
         else:
             await self.create_object(event_name)
         
@@ -251,7 +262,8 @@ class S3Utils:
             lambda:self.client.upload_fileobj(
                 image_data,
                 self.bucket_name,
-                f'{upload_image_folder}{filename}'
+                f'{upload_image_folder}{filename}',
+                Config=self.transfer_config
             )
         )
 
@@ -368,3 +380,21 @@ class S3Utils:
             return url
         except ClientError as e:
             raise HTTPException(f"Error generating presigned URL: {str(e)}")
+    
+    async def download_s3_folder(self, prefix):
+        loop = asyncio.get_running_loop()
+
+        try:
+            folder_list = await loop.run_in_executor(
+                self.executor,
+                lambda: self.client.list_objects_v2(Bucket=self.bucket_name, Prefix=prefix)
+            )
+            for contents in folder_list['Contents']:
+                all_folder_list = []
+                # if contents['Key'] 
+
+
+            return contents
+
+        except ClientError as e:
+            raise Exception(f"Error from s3: {str(e)}")

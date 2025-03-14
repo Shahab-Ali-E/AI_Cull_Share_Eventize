@@ -1,6 +1,7 @@
 from fastapi import HTTPException, status
+from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from model.FolderInS3 import FoldersInS3
+from model.CullingFolders import CullingFolder
 from utils.UpdateUserStorage import update_user_storage_in_db
 from sqlalchemy.future import select
 
@@ -32,16 +33,21 @@ async def delete_s3_folder_and_update_db(del_folder_path: str, db_session: Async
     # Extract folder name from the S3 path
     folder_name = del_folder_path.split('/')[-2]
     # Retrieve folder metadata from the database
-    folder_data = (await db_session.scalars(select(FoldersInS3).where(FoldersInS3.name == folder_name,
-                                                                      FoldersInS3.module == module,
-                                                                      FoldersInS3.user_id == user_id))).first()
+    folder_data = (await db_session.scalars(select(CullingFolder).where(CullingFolder.name == folder_name,
+                                                                      CullingFolder.user_id == user_id))).first()
 
     # Raise an error if the folder is not found in the database
     if not folder_data:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Folder with name '{folder_name}' not found in database"
-        )
+        return JSONResponse(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    content=f'Folder with name {folder_name} not found!'
+                )
+    
+    if folder_data.culling_in_progress is True:
+        return JSONResponse(
+                    status_code=status.HTTP_423_LOCKED,
+                    content=f'Unable to Delete Folder While Culling is In Progress'
+                )
 
     # Attempt to delete the folder from Database
     try:        

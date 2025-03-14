@@ -1,72 +1,89 @@
+from fastapi.responses import JSONResponse
 from sqlalchemy import insert
-from model import FolderInS3, ImagesMetaData
 from fastapi import HTTPException,status
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
 from sqlalchemy.future import select
+from typing import Dict, List, Type
+from sqlalchemy.orm import DeclarativeMeta
 
 
-async def upsert_image_metadata_DB(db_session:AsyncSession, match_criteria:dict=None, update_fields: dict=None, bulk_insert_fields:list=None, update=False):
+def insert_image_metadata(db_session: Session, bulk_insert_fields: List[Dict], model:Type[DeclarativeMeta]) -> dict:
     """
-    This function handles saving image metadata to the database. It supports both updating existing records and inserting new ones based on the provided arguments.
+    Inserts new image metadata records into the database.
+
+    Args:
+        db_session (Session): The SQLAlchemy synchronous session used to interact with the database.
+        bulk_insert_fields (list of dict): A list of dictionaries, where each dictionary contains the data for a new record.
+
+    Raises:
+        Exception: If `bulk_insert_fields` is empty, or if an error occurs while inserting the records.
+
+    Returns:
+        dict: A dictionary containing:
+            - "status": The status of the operation ("COMPLETED" if successful).
+            - "message": A success message upon successful insertion of all records.
+    """
+    if not bulk_insert_fields:
+        raise Exception('no object found in "bulk_insert_fields" to insert')
+
+    try:
+        new_records = [model(**record) for record in bulk_insert_fields]
+        db_session.bulk_save_objects(new_records)
+        return {
+            "status": "COMPLETED",
+            "message": "Successfully inserted all metadata to database",
+            "images_metadata":new_records
+        }
+    except SQLAlchemyError as e:
+        db_session.rollback()
+        raise Exception(f"Error inserting image metadata: {str(e)}")
+
+
+async def update_image_metadata(db_session: AsyncSession, match_criteria: Dict, update_fields: Dict, model:Type[DeclarativeMeta]) -> dict:
+    """
+    Updates an existing image metadata record in the database.
 
     Args:
         db_session (AsyncSession): The SQLAlchemy asynchronous session used to interact with the database.
-        match_criteria (dict, optional): Criteria to match the record to be updated. This should include the primary key 
-                                         or unique constraints necessary to locate the record. Required if `update` is True.
-        update_fields (dict, optional): Fields and their new values to update in the existing record. 
-                                        Only relevant if `update` is True. Required if `update` is True.
-        bulk_insert_fields (list, optional): A list of dictionaries where each dictionary represents a new record's data 
-                                             to be inserted into the database. Required if `update` is False.
-        update (bool, optional): Flag indicating whether to update an existing record (True) or insert new records (False). 
-                                 Defaults to False.
+        match_criteria (dict): Criteria to identify the record to be updated.
+                               Should include primary key or unique constraints.
+        update_fields (dict): A dictionary containing fields and their new values.
 
     Raises:
         Exception: 
-            - If `update` is True but `match_criteria` or `update_fields` are not provided.
-            - If `update` is False but `bulk_insert_fields` is empty.
-            - If no matching record is found when `update` is True.
-            - If a SQLAlchemy error occurs during the operation, indicating a failure to save the image metadata.
+            - If `match_criteria` or `update_fields` are not provided.
+            - If no matching record is found.
+            - If a SQLAlchemy error occurs during the update operation.
 
     Returns:
         dict: A dictionary containing:
             - "status": The status of the operation ("success" if the operation was successful).
-            - "data": The updated record if `update` is True.
-            - "message": A success message if new records were inserted when `update` is False.
+            - "data": The updated record.
     """
+    if not update_fields or not match_criteria:
+        raise Exception('must provide "update_fields" and "match_criteria" to update record')
+
     try:
-        if update:
-            if not update_fields or not match_criteria:
-                raise Exception('must provide "update_fields" and "match_criteria" to update record')
-            
-            condtion = [getattr(ImagesMetaData.ImagesMetaData, key) == value for key, value in match_criteria.items()]
-            # Check if the record exists
-            existing_record = (await db_session.scalars(select(ImagesMetaData.ImagesMetaData).where(*condtion))).first()
-            if not existing_record:
-                raise Exception("No image found to update.")
-            for key, value in update_fields.items():
-                setattr(existing_record, key, value)
-            db_session.add(existing_record)
-            await db_session.refresh(existing_record)
-            return {"status": "success", "data": existing_record}
-        
-        else:
-            if not bulk_insert_fields:
-                raise Exception('no object found in "bulk_insert_feild" to insert')
-            
-            # Create a new record
-            new_record = [ImagesMetaData.ImagesMetaData(**records) for records in bulk_insert_fields]
-            db_session.add_all(new_record)
-            return {"status": "success" ,
-                    "message":"successfully inserted all metadata to database"
-                    }
-        
+        condition = [getattr(model, key) == value for key, value in match_criteria.items()]
+        existing_record = (await db_session.scalars(select(model).where(*condition))).first()
+
+        if not existing_record:
+            raise Exception("No image found to update.")
+
+        for key, value in update_fields.items():
+            setattr(existing_record, key, value)
+        db_session.add(existing_record)
+        await db_session.refresh(existing_record)
+        return {"status": "success", "data": existing_record}
+    
     except SQLAlchemyError as e:
         await db_session.rollback()
-        raise Exception(f"Error saving image metadata: {str(e)}")
+        raise Exception(f"Error updating image metadata: {str(e)}")
     
 
-async def upsert_folder_metadata_DB(db_session: AsyncSession, match_criteria: dict, update_fields: dict = None, update=False): 
+async def upsert_folder_metadata_DB(db_session: AsyncSession, match_criteria: dict, model:Type[DeclarativeMeta], update_fields: dict = None, update=False): 
     """
     Save or update folder metadata in the database.
 
@@ -100,8 +117,8 @@ async def upsert_folder_metadata_DB(db_session: AsyncSession, match_criteria: di
             raise Exception('must provide "match_criteria" to insert or update record')
         
         # Build the where clause using SQLAlchemy expressions
-        conditions = [getattr(FolderInS3.FoldersInS3, key) == value for key, value in match_criteria.items()]
-        existing_record = (await db_session.scalars(select(FolderInS3.FoldersInS3).where(*conditions))).first()
+        conditions = [getattr(model, key) == value for key, value in match_criteria.items()]
+        existing_record = (await db_session.scalars(select(model).where(*conditions))).first()
         
         if update:
             if not update_fields:
@@ -115,10 +132,13 @@ async def upsert_folder_metadata_DB(db_session: AsyncSession, match_criteria: di
 
         else:
             if existing_record:
-                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Folder already with name {existing_record.name} already found")
-            
+                return JSONResponse(
+                    status_code=status.HTTP_409_CONFLICT,
+                    content=f'Folder already with name {existing_record.name} already found !'
+                )
+               
             # Create a new record
-            new_record = FolderInS3.FoldersInS3(**match_criteria)
+            new_record = model(**match_criteria)
             existing_record = new_record
         
         db_session.add(existing_record)
@@ -127,4 +147,4 @@ async def upsert_folder_metadata_DB(db_session: AsyncSession, match_criteria: di
         await db_session.rollback()
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Error saving or updating metadata: {str(e)}")
     
-    return {"status": "success", "data": existing_record}
+    return {"status": "COMPLETED", "data": existing_record}
