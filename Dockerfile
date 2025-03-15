@@ -38,6 +38,10 @@ ENV VIRTUAL_ENV=/app/.venv \
 
 COPY --from=builder ${VIRTUAL_ENV} ${VIRTUAL_ENV}
 
+COPY pyproject.toml poetry.lock ./
+
+RUN touch README.md
+
 COPY src/ /app/src/
 
 COPY Ml_Models/ /app/ML_Models/

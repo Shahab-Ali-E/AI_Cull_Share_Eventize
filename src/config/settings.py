@@ -9,13 +9,6 @@ from urllib.parse import quote_plus
 env_path = Path(".") / ".env"
 load_dotenv(dotenv_path=env_path)
 
-# Get the project root directory (2 levels up from this file)
-PROJECT_ROOT = Path(__file__).parent.parent.parent
-# models path
-BASE_PATH = str(PROJECT_ROOT / "Ml_Models")
-BLUR_IMAGE_DETECTION_MODEL_PATH = os.path.join(BASE_PATH, "Tf_Blur_Model")
-CLOSED_EYE_DETECTION_MODEL_PATH = os.path.join(BASE_PATH, "Tf_Closed_Eye_Model")
-
 
 class Settings(BaseSettings):
 
@@ -98,11 +91,14 @@ class Settings(BaseSettings):
     MAX_SESSION_DURATION: int = os.environ.get("MAX_SESSION_DURATION",2)
 
     #AI MODELS CONFIG
-    #BLUR IMAGE DETECTION MODEL
+    # Hugging Face Token
+    HUGGINGFACE_TOKEN: str = os.environ.get("HUGGINGFACE_TOKEN",None)
+    # Feature Extractor
     FEATURE_EXTRACTOR : str = os.environ.get("FEATURE_EXTRACTOR",None)
-    BLUR_IMAGE_DETECTION_MODEL: str = BLUR_IMAGE_DETECTION_MODEL_PATH
+    #BLUR IMAGE DETECTION MODEL
+    BLUR_IMAGE_DETECTION_MODEL: str = os.environ.get("BLUR_IMAGE_DETECTION_MODEL",None)
     #CLOSED EYE DETECTIO MODEL
-    CLOSED_EYE_DETECTION_MODEL : str = CLOSED_EYE_DETECTION_MODEL_PATH
+    CLOSED_EYE_DETECTION_MODEL : str = os.environ.get("CLOSED_EYE_DETECTION_MODEL",None)
     # FACE_CASCADE_MODEL: str = os.environ.get("FACE_CASCADE_MODEL",None)
     #FACE_EMBEDDING_GENERATOR_MODEL
     FACE_EMBEDDING_GENERATOR_MODEL:str = os.environ.get('FACE_EMBEDDING_GENERATOR_MODEL',None)

@@ -16,7 +16,7 @@ from model.CullingFolders import CullingFolder
 from model.CullingImagesMetaData import ImagesMetaData, TemporaryImageURL
 from model.User import User
 from schemas.FolderMetaDataResponse import CullingFolderMetaDataById, CullingsResponse, TemporaryImageURLResponse, UploadCullingImagesResponse
-from schemas.imageMetaDataResponse import CulledImagesMetadataResponse
+from schemas.ImageMetaDataResponse import CulledImagesMetadataResponse
 from schemas.ImageTaskData import ImageTaskData
 from services.Culling.createFolderInS3 import create_folder_in_S3
 from services.Culling.deleteFolderFromS3 import delete_s3_folder_and_update_db
