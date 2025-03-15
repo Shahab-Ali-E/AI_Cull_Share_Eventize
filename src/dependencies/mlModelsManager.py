@@ -21,22 +21,16 @@ class ModelManager:
     
     @staticmethod
     def initialize_models(settings):
-        # # Get model paths from environment variables if available
-        # blur_model_path = os.environ.get('BLUR_IMAGE_DETECTION_MODEL_PATH', settings.BLUR_IMAGE_DETECTION_MODEL)
-        # closed_eye_model_path = os.environ.get('CLOSED_EYE_DETECTION_MODEL', settings.CLOSED_EYE_DETECTION_MODEL)
-        # # face_cascade_path = os.environ.get('FACE_CASCADE_MODEL', settings.FACE_CASCADE_MODEL)
-        
-        # print(f"Loading blur model from: {blur_model_path}")
-        # print(f"Loading closed eye model from: {closed_eye_model_path}")
-        # # print(f"Loading face cascade from: {face_cascade_path}")
+        print(f"Loading closed eye model from: {settings.CLOSED_EYE_DETECTION_MODEL}")
+        print(f"Loading blur model from: {settings.BLUR_IMAGE_DETECTION_MODEL}")
         
         try:
-            # Blur detection loading 
-            blur_detect_model = ViTForImageClassification.from_pretrained(settings.BLUR_IMAGE_DETECTION_MODEL, from_tf=True).to(ModelManager.device)
             feature_extractor = ViTFeatureExtractor.from_pretrained(settings.FEATURE_EXTRACTOR)
+            # Blur detection loading 
+            blur_detect_model = ViTForImageClassification.from_pretrained(settings.BLUR_IMAGE_DETECTION_MODEL, from_tf=True, use_auth_token=settings.HUGGINGFACE_TOKEN).to(ModelManager.device)
             
             # Closed eye detection loading
-            closed_eye_detection_model = ViTForImageClassification.from_pretrained(settings.CLOSED_EYE_DETECTION_MODEL, from_tf=True).to(ModelManager.device)
+            closed_eye_detection_model = ViTForImageClassification.from_pretrained(settings.CLOSED_EYE_DETECTION_MODEL, from_tf=True, use_auth_token=settings.HUGGINGFACE_TOKEN).to(ModelManager.device)
             
             # Duplicate detection model
             duplicate_image_detection_model = ResNet50(weights='imagenet', include_top=False, pooling='avg')
@@ -51,7 +45,7 @@ class ModelManager:
             # FaceNet model for face embeddings
             face_net_model = InceptionResnetV1(pretrained='vggface2').eval()
 
-            return{
+            return {
                 "blur_detect_model": blur_detect_model,
                 "feature_extractor": feature_extractor,
                 "closed_eye_detection_model": closed_eye_detection_model,
