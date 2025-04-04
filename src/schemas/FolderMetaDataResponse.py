@@ -1,7 +1,7 @@
-from pydantic import field_validator, UUID4, BaseModel, Field
+from pydantic import field_validator, UUID4, BaseModel
 from fastapi import UploadFile
 from datetime import datetime
-from typing import Annotated, List, Optional
+from typing import List, Optional
 
 class CullingFolderMetaData(BaseModel):
     id: UUID4
@@ -10,6 +10,8 @@ class CullingFolderMetaData(BaseModel):
     total_size: int
     culling_done:bool
     culling_in_progress:bool
+    uploading_in_progress:bool
+    uploading_task_id:Optional[str] = None
 
 class TemporaryImageURLResponse(BaseModel):
     id: UUID4
@@ -25,7 +27,7 @@ class UploadCullingImagesResponse(BaseModel):
     message: str
     data: List[TemporaryImageURLResponse]
     
-class CullingsResponse(BaseModel):
+class GetAllCullingFoldersResponse(BaseModel):
     total_count: int
     folders: List[CullingFolderMetaData]
 
@@ -37,6 +39,8 @@ class EventsMetaData(BaseModel):
     created_at: datetime
     total_size: int
     status:str
+    uploading_in_progress: bool
+    uploading_task_id: Optional[str]
 
 
 class EventsResponse(BaseModel):

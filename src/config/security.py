@@ -87,10 +87,11 @@ async def validate_images_and_storage(
     
     if total_storage_used > max_allowed_storage:
         return None, (
-            f"Uploading these files would exceed your storage limit of "
-            f"{max_allowed_storage / (1024 * 1024)} MB. "
-            f"Current usage: {db_storage_used / (1024 * 1024)} MB, "
-            f"New files: {combined_image_size / (1024 * 1024)} MB."
+            # f"Uploading these files would exceed your storage limit of "
+            # f"{max_allowed_storage / (1024 * 1024)} MB. "
+            # f"Current usage: {db_storage_used / (1024 * 1024)} MB, "
+            # f"New files: {combined_image_size / (1024 * 1024)} MB."
+            "Not enough storage"
         )
 
     # If all validations pass

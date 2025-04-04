@@ -20,6 +20,8 @@ class CullingFolder(Base):
     total_size: Mapped[int] = mapped_column(default=0)
     culling_done: Mapped[bool] = mapped_column(nullable=False, default=False)
     culling_in_progress: Mapped[bool] = mapped_column(nullable=False, default=False)
+    uploading_in_progress: Mapped[bool] = mapped_column(nullable=False, default=False)
+    uploading_task_id: Mapped[str] = mapped_column(nullable=True, default=None)
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     
     # Relationship back to User

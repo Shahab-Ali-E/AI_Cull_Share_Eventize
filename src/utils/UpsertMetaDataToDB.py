@@ -1,5 +1,4 @@
 from fastapi.responses import JSONResponse
-from sqlalchemy import insert
 from fastapi import HTTPException,status
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,6 +8,8 @@ from typing import Dict, List, Type
 from sqlalchemy.orm import DeclarativeMeta
 
 
+
+# ############## Syncronous Function ##############
 def insert_image_metadata(db_session: Session, bulk_insert_fields: List[Dict], model:Type[DeclarativeMeta]) -> dict:
     """
     Inserts new image metadata records into the database.
@@ -40,7 +41,70 @@ def insert_image_metadata(db_session: Session, bulk_insert_fields: List[Dict], m
         db_session.rollback()
         raise Exception(f"Error inserting image metadata: {str(e)}")
 
+def sync_upsert_folder_metadata_DB(
+    db_session: Session, 
+    match_criteria: Dict, 
+    model: Type[DeclarativeMeta], 
+    update_fields: Dict = None, 
+    update: bool = False
+):
+    """
+    Save or update folder metadata in the database (synchronous version).
+    
+    Args:
+        db_session (Session): The SQLAlchemy session used to interact with the database.
+        match_criteria (dict): Criteria to locate the record to be updated or to use for the new record.
+        update_fields (dict, optional): Fields and their new values to update in the existing record.
+        update (bool, optional): Flag indicating whether to update an existing record (True) or insert a new record (False).
 
+    Raises:
+        HTTPException: 
+            - 404 if `update` is True and no record matching `match_criteria` is found.
+            - 409 if `update` is False and a record with the same name already exists.
+            - 500 if a database error occurs.
+
+    Returns:
+        dict: A dictionary containing the status and the saved or updated record.
+    """
+    try:
+        if not match_criteria:
+            raise ValueError('Must provide "match_criteria" to insert or update record')
+        
+        # Build the where clause using SQLAlchemy expressions
+        conditions = [getattr(model, key) == value for key, value in match_criteria.items()]
+        existing_record = db_session.scalars(select(model).where(*conditions)).first()
+        
+        if update:
+            if not update_fields:
+                raise ValueError('Must provide "update_fields" to update record')
+            
+            if not existing_record:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No record found")
+            
+            # Update only the specified fields
+            for key, value in update_fields.items():
+                setattr(existing_record, key, value)
+        else:
+            if existing_record:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=f'Folder already exists with name {existing_record.name}!'
+                )
+            
+            # Create a new record
+            new_record = model(**match_criteria)
+            existing_record = new_record
+        
+        db_session.add(existing_record)
+        return {"status": "COMPLETED", "data": existing_record}
+    
+    except SQLAlchemyError as e:
+        db_session.rollback()
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Error saving or updating metadata: {str(e)}")
+    
+    
+    
+############ Asynchronous Function ##############
 async def update_image_metadata(db_session: AsyncSession, match_criteria: Dict, update_fields: Dict, model:Type[DeclarativeMeta]) -> dict:
     """
     Updates an existing image metadata record in the database.

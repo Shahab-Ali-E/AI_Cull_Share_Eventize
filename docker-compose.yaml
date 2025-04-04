@@ -8,18 +8,10 @@ services:
     ports:
       - 8000:8000
     volumes:
-      - ./Ml_Models:/app/Ml_Models
       - ./static:/app/static
-    environment:
-      - POSTGRES_HOST=database_dev
-      - CELERY_BROKER_URL=amqp://guest:guest@rabbit_MQ_dev:5672//
-      - BLUR_IMAGE_DETECTION_MODEL_PATH=/app/Ml_Models/Tf_Blur_Model
-      - CLOSED_EYE_DETECTION_MODEL=/app/Ml_Models/Tf_Closed_Eye_Model
-      - FACE_CASCADE_MODEL=/app/Ml_Models/haarcascade_frontalface_default.xml
     depends_on:
       - database_dev
       - rabbit_MQ_dev
-    restart: unless-stopped
 
   database_dev:
     image: postgres:16.4
@@ -31,25 +23,19 @@ services:
       - 5432:5432
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    restart: unless-stopped
 
   celery_dev:
     container_name: celery_worker
     build: .
     command: celery -A src.main.main.celery worker --loglevel=info --pool=solo
     volumes:
-      - ./Ml_Models:/app/Ml_Models
       - ./static:/app/static
-    environment:
-      - POSTGRES_HOST=database_dev
-      - CELERY_BROKER_URL=amqp://guest:guest@rabbit_MQ_dev:5672//
-      - BLUR_IMAGE_DETECTION_MODEL_PATH=/app/Ml_Models/Tf_Blur_Model
-      - CLOSED_EYE_DETECTION_MODEL=/app/Ml_Models/Tf_Closed_Eye_Model
-      - FACE_CASCADE_MODEL=/app/Ml_Models/haarcascade_frontalface_default.xml
+    env_file:
+      - ./.env
+
     depends_on:
       - database_dev
       - rabbit_MQ_dev
-    restart: unless-stopped
 
   rabbit_MQ_dev:
     image: rabbitmq:3-management
@@ -58,7 +44,6 @@ services:
       - 5672:5672
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
-    restart: unless-stopped
 
 volumes:
   postgres_data:

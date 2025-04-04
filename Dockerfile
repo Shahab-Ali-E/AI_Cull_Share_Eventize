@@ -1,58 +1,100 @@
-# The builder image, used to build the virtual environment
-FROM python:3.12-slim AS builder
+# ###############################################
+# # Base Image
+# ###############################################
+# # FROM python:3.12-slim AS python-base
+# FROM python:3.12-slim
 
-# Install required dependencies
-RUN apt-get update && apt-get install -y \
-    libpq-dev \
-    gcc 
+# # ENV PYTHONUNBUFFERED=1 \
+# #     PYTHONDONTWRITEBYTECODE=1 \
+# #     PIP_NO_CACHE_DIR=off \
+# #     PIP_DISABLE_PIP_VERSION_CHECK=on \
+# #     PIP_DEFAULT_TIMEOUT=100 \
+# #     POETRY_VERSION=1.8.3 \
+# #     POETRY_HOME="/opt/poetry" \
+# #     POETRY_VIRTUALENVS_IN_PROJECT=true \
+# #     POETRY_NO_INTERACTION=1 \
+# #     PYSETUP_PATH="/opt/pysetup" \
+# #     VENV_PATH="/opt/pysetup/.venv"
 
-RUN pip install poetry==1.8.3
+# # # prepend poetry and venv to path
+# # ENV PATH="$POETRY_HOME/bin:$VENV_PATH/bin:$PATH"
 
+# ###############################################
+# # Builder Image
+# ###############################################
+# # FROM python-base AS builder-base
+# RUN apt-get update \
+#     && apt-get install --no-install-recommends -y \
+#     curl \
+#     build-essential \
+#     gcc \
+#     python3-dev
+
+# # install poetry using pip to ensure version control
+# RUN pip install "poetry==1.8.3"
+
+# # copy project requirement files here to ensure they will be cached.
+# # WORKDIR $PYSETUP_PATH
+# WORKDIR /app
+# COPY poetry.lock pyproject.toml ./app/
+
+# # install runtime deps - uses $POETRY_VIRTUALENVS_IN_PROJECT internally
+# RUN poetry install --no-root
+
+# ###############################################
+# # Production Image
+# ###############################################
+# # FROM python-base AS production
+# # COPY --from=builder-base $PYSETUP_PATH $PYSETUP_PATH
+# COPY . ./app/
+
+# CMD ["uvicorn", "src.main.main:app", "--host", "0.0.0.0", "--port", "8080"]
+
+# #######################################
+
+# Use official Python slim image
+FROM python:3.12-slim
+
+# Set environment variables for Poetry & Python
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=off \
+    PIP_DISABLE_PIP_VERSION_CHECK=on \
+    PIP_DEFAULT_TIMEOUT=100 \
+    POETRY_VERSION=1.8.3 \
+    POETRY_HOME="/opt/poetry" \
+    POETRY_VIRTUALENVS_IN_PROJECT=true \
+    POETRY_NO_INTERACTION=1 \
+    VENV_PATH="/app/.venv"
+
+# Ensure Poetry & Virtual Env is in PATH
+ENV PATH="$POETRY_HOME/bin:$VENV_PATH/bin:$PATH"
+
+# Install system dependencies
+RUN apt-get update && apt-get install --no-install-recommends -y \
+    curl \
+    build-essential \
+    gcc \
+    python3-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Poetry
+RUN pip install "poetry==$POETRY_VERSION"
+
+# Set working directory
 WORKDIR /app
 
-ENV POETRY_NO_INTERACTION=1\
-    POETRY_VIRTUALENVS_IN_PROJECT=1 \
-    POETRY_VIRTUALENVS_CREATE=1 \
-    POETRY_CACHE_DIR=/tmp/poetry_cache
+# Copy dependency files first (to leverage Docker cache)
+COPY poetry.lock pyproject.toml ./
 
+# Install dependencies inside a virtual environment
+RUN poetry install --no-root --only main
 
-COPY pyproject.toml poetry.lock ./
+# Copy all project files
+COPY . .
 
-RUN touch README.md
+# Expose the port your application runs on
+EXPOSE 8080
 
-# Force install psycopg2 with pip to bypass PEP 517 error
-# RUN poetry run pip install --no-cache-dir --no-build-isolation psycopg2==2.9.10
-
-# Now install all dependencies
-RUN --mount=type=cache,target=$POETRY_CACHE_DIR poetry install --no-root
-
-
-# The runtime image, used to just run the code provided its virtual environment
-FROM python:3.12-slim-bookworm AS runtime
-
-# Install Poetry in runtime stage
-RUN pip install poetry==1.8.3
-
-ENV VIRTUAL_ENV=/app/.venv \
-    PATH="/app/.venv/bin:$PATH"
-
-COPY --from=builder ${VIRTUAL_ENV} ${VIRTUAL_ENV}
-
-COPY pyproject.toml poetry.lock ./
-
-RUN touch README.md
-
-COPY src/ /app/src/
-
-COPY Ml_Models/ /app/ML_Models/
-
-COPY alembic/ /app/alembic/
-
-COPY alembic.ini /app/alembic.ini
-
-RUN mkdir -p /app/static
-
-EXPOSE 8000
-
-CMD ["poetry", "run", "uvicorn", "src.main.main:app", "--host", "0.0.0.0", "--port", "8000"]
-
+# Start the application using Uvicorn
+CMD ["uvicorn", "src.main.main:app", "--host", "0.0.0.0", "--port", "8080"]

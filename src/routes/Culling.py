@@ -15,16 +15,15 @@ from dependencies.user import get_user
 from model.CullingFolders import CullingFolder
 from model.CullingImagesMetaData import ImagesMetaData, TemporaryImageURL
 from model.User import User
-from schemas.FolderMetaDataResponse import CullingFolderMetaDataById, CullingsResponse, TemporaryImageURLResponse, UploadCullingImagesResponse
+from schemas.FolderMetaDataResponse import CullingFolderMetaDataById, GetAllCullingFoldersResponse, TemporaryImageURLResponse, UploadCullingImagesResponse
 from schemas.ImageMetaDataResponse import CulledImagesMetadataResponse
 from schemas.ImageTaskData import ImageTaskData
 from services.Culling.createFolderInS3 import create_folder_in_S3
 from services.Culling.deleteFolderFromS3 import delete_s3_folder_and_update_db
-from services.Culling.pre_cull_img_processing import pre_cull_image_processing
 from services.Culling.tasks.cullingTask import culling_task
+from services.Culling.tasks.cullingImagesUploadingTask import upload_preculling_images_and_insert_metadata
+from services.Culling.uploadImages import upload_before_culling_images
 from utils.S3Utils import S3Utils
-from utils.UpdateUserStorage import update_user_storage_in_db
-from utils.UpsertMetaDataToDB import upsert_folder_metadata_DB
 
 router = APIRouter(
     prefix='/culling',
@@ -45,7 +44,7 @@ s3_utils = S3Utils(aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
 
 
 
-@router.get("/get_all_folder", response_model=CullingsResponse)
+@router.get("/get_all_folder", response_model=GetAllCullingFoldersResponse)
 async def get_all_folders(
     db_session:DBSessionDep, 
     user:User = Depends(get_user),
@@ -197,7 +196,9 @@ async def get_folder_by_id(
                 total_size=folder.total_size,
                 culling_done=folder.culling_done,
                 culling_in_progress=folder.culling_in_progress,
-                temporary_images_urls=updated_urls
+                temporary_images_urls=updated_urls,
+                uploading_in_progress=folder.uploading_in_progress,
+                uploading_task_id=folder.uploading_task_id
             )
 
         except HTTPException as e:
@@ -339,7 +340,6 @@ async def create_directory(dir_name:str, request:Request,  db_session: DBSession
     async with db_session.begin():
         try:
             response =  await create_folder_in_S3(dir_name=dir_name.lower(), s3_utils_obj=s3_utils, db_session=db_session, user_id=user_id)
-            await db_session.commit()
             return response
         except HTTPException as e:
             await db_session.rollback()
@@ -350,7 +350,7 @@ async def create_directory(dir_name:str, request:Request,  db_session: DBSession
 
 
 @router.post('/upload_images/{folder_id}', status_code=status.HTTP_202_ACCEPTED, response_model=UploadCullingImagesResponse)
-async def upload_images(request: Request, folder_id: str, db_session: DBSessionDep,user: User = Depends(get_user), images: list[UploadFile] = File(...)):
+async def upload_images(folder_id: str, db_session: DBSessionDep,user: User = Depends(get_user), images: list[UploadFile] = File(...)):
     """
     📸 **Upload Images to S3 and Initiate Background Culling Task** 📸
 
@@ -380,97 +380,7 @@ async def upload_images(request: Request, folder_id: str, db_session: DBSessionD
       
         # Begin a single transaction for the entire process
         async with db_session.begin():
-            # Validate folder
-            folder_data = await db_session.execute(
-                select(CullingFolder).where(
-                    CullingFolder.id == folder_id,
-                    CullingFolder.user_id == user_id
-                )
-            )
-            folder_data = folder_data.scalar_one_or_none()
-            if not folder_data:
-                return JSONResponse(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    content=f'Folder with id {folder_id} not found!'
-                )
-                
-            # Validate images and storage
-            storage_used = await db_session.execute(
-                select(User.total_culling_storage_used).where(User.id == user_id)
-            )
-            storage_used = storage_used.scalar_one_or_none()
-
-            is_valid, output_validated_storage = await validate_images_and_storage(
-                files=images, max_uploads=1000, max_size_mb=100, db_storage_used=storage_used
-            )
-
-            if not is_valid:
-                return JSONResponse(
-                    status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-                    content=output_validated_storage
-                )
-               
-            # Process batches
-            batch_size = 50
-            all_presigned_urls = []
-            for i in range(0, len(images), batch_size):
-                batch = images[i:i + batch_size]
-                try:
-                    # Process the batch and append presigned URLs
-                    presigned_urls = await pre_cull_image_processing(
-                        folder=folder_data.name,
-                        images=batch,
-                        s3_utils=s3_utils,
-                        user_id=user_id,
-                        db_session=db_session,
-                        culling_folder_id=folder_id
-                    )
-                    for data in presigned_urls:
-                       all_presigned_urls.append(TemporaryImageURLResponse(
-                           id=uuid4(),
-                           name=data.get('name'),
-                           file_type=data.get('file_type'),
-                           image_download_path=data.get('url'),
-                           image_download_validity=data.get('validity')
-                           ))
-                except Exception as e:
-                    print(f"Error processing batch {i}: {str(e)}")
-                    raise HTTPException(
-                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                        detail=f"Error processing batch {i}: {str(e)}"
-                    )
-            
-            print(f'\n\n\n\n\n all presinged urls {all_presigned_urls}')
-            
-            # Update folder metadata and user storage in the database
-            updated_folder_storage = folder_data.total_size + output_validated_storage
-            match_criteria = {"id": folder_id, "name": folder_data.name, "user_id": user_id}
-
-            # Update folder metadata
-            await upsert_folder_metadata_DB(
-                db_session=db_session,
-                match_criteria=match_criteria,
-                update_fields={"total_size": updated_folder_storage},
-                model=CullingFolder,
-                update=True
-            )
-
-            # Update user storage
-            is_valid, response = await update_user_storage_in_db(
-                db_session=db_session,
-                total_image_size=output_validated_storage,
-                module=settings.APP_SMART_CULL_MODULE,
-                user_id=user_id,
-                increment=True
-            )
-
-            if not is_valid:
-                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"{response}")
-
-        return UploadCullingImagesResponse(
-            message="Images uploaded successfully",
-            data=all_presigned_urls
-        )
+            return await upload_before_culling_images(db_session=db_session, folder_id=folder_id, images=images, user_id=user_id)
         
     except HTTPException as e:
         raise e
@@ -568,16 +478,14 @@ async def delete_folder(dir_name:str, request:Request, db_session: DBSessionDep,
                                                         module=settings.APP_SMART_CULL_MODULE,
                                                         user_id=user_id
                                                         )
-            # Commit the database transaction if everything is successful
-            await db_session.commit()
             return response
         
     except HTTPException as e:
         await db_session.rollback()
-        raise HTTPException(status_code=e.status_code, detail=str(e))
+        return JSONResponse(status_code=e.status_code, content=str(e))
 
     except Exception as e:
         await db_session.rollback()
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+        return JSONResponse(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, content=str(e))
 
  

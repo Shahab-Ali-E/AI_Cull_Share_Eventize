@@ -63,7 +63,7 @@ def download_and_process_images(self, event_id, event_name:str, event_folder_pat
     total_images = len(urls)
 
     with tqdm(total=total_images, desc="Downloading images", unit="image") as progress_bar:
-        for index, image_url in enumerate(urls):
+        for _,image_url in enumerate(urls):
             try:
                 response = requests.get(image_url)
                 if response.status_code !=200:

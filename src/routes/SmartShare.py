@@ -1,17 +1,15 @@
 from datetime import datetime, timezone
 import os
 from urllib.parse import unquote
-from PIL import Image
 from typing import List, Optional
 from uuid import UUID
 
-from fastapi import (APIRouter, Depends, File, HTTPException, Query, Request, Response,
+from fastapi import (APIRouter, Depends, File, HTTPException, Query, Request,
                      UploadFile, status, Form)
 from fastapi.responses import JSONResponse
 from sqlalchemy import asc, desc, func
 from sqlalchemy.future import select
 
-from config.security import validate_images_and_storage
 from config.settings import get_settings
 from dependencies.core import DBSessionDep
 from dependencies.user import get_user
@@ -22,17 +20,14 @@ from schemas.FolderMetaDataResponse import  EventsResponse
 from schemas.ImageMetaDataResponse import SmartShareImageResponse
 from schemas.ImageTaskData import ImageTaskData
 from services.SmartShare.createEvent import create_event_in_S3_and_DB
-from services.SmartShare.deleteEvent import delete_event_s3_db_collection
-from services.SmartShare.imagePreProcessEmbeddings import \
-    preprocess_image_before_embedding
+from services.SmartShare.deleteEvent import delete_event_s3_db
 from services.SmartShare.secondary_user_service import associate_user_with_folder
 from services.SmartShare.similaritySearch import get_similar_images
 from services.SmartShare.tasks.imageShareTask import download_and_process_images
 from services.SmartShare.updateEvent import update_event_details
+from services.SmartShare.uploadSmartShareImages import upload_smart_share_event_images
 from utils.QdrantUtils import QdrantUtils
 from utils.S3Utils import S3Utils
-from utils.UpdateUserStorage import update_user_storage_in_db
-from utils.UpsertMetaDataToDB import upsert_folder_metadata_DB
 
 router = APIRouter(
     prefix='/smart_share',
@@ -281,6 +276,8 @@ async def get_event_by_id(
                 "created_at":event.created_at,
                 "total_size":event.total_size,
                 "images_data":images_urls,
+                "uploading_in_progress": event.uploading_in_progress,
+                "uploading_task_id": event.uploading_task_id,
                 "status":event.status
             }
 
@@ -439,124 +436,19 @@ async def upload_images(event_id: str, db_session:DBSessionDep, images: list[Upl
     - 🟠 **500 Internal Server Error**: **Something went wrong!** An unexpected error occurred during the upload process.
     """
     user_id = user.get('id')
-    if not user_id:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, 
-            detail='unauthorized access'
-        )
-
-    folder_name = None  # Initialize to use in cleanup if needed
-    images_uploaded_to_s3 = False  # Flag to track if images were uploaded to S3
-
+    
     try:
+        # Begin a single transaction for the entire process
         async with db_session.begin():
-            # Check if the folder exists in the database
-            folder_data = (
-                await db_session.scalars(
-                    select(SmartShareFolder)
-                    .where(
-                        SmartShareFolder.id == event_id,
-                        SmartShareFolder.user_id == user_id
-                    )
-                )
-            ).first()
-            if not folder_data:
-                return JSONResponse(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    content=f'Event with id {event_id} not found!'
-                )
-            
-            # Force SQLAlchemy to load the `name` attribute eagerly
-            folder_name = folder_data.name  # This ensures the attribute is loaded
-
-            # Validate combined image size and perform image validations
-            storage_used = await db_session.scalar(
-                select(User.total_image_share_storage_used)
-                .where(User.id == user_id)
-            )
-            is_valid, output_validated_storage = await validate_images_and_storage(
-                files=images, 
-                max_uploads=1000, 
-                max_size_mb=10,
-                db_storage_used=storage_used
-            )
-            print(f'\n\n\n valid:  {is_valid}')
-            print(f'\n\n\n output_validated_storage:  {output_validated_storage}')
-            if not is_valid:
-                raise HTTPException(
-                    status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, 
-                    detail=output_validated_storage
-                )
-
-            # Process images in batches
-            batch_size = 50
-            all_presigned_urls = []
-            for i in range(0, len(images), batch_size):
-                batch = images[i : i + batch_size]
-                presigned_urls = await preprocess_image_before_embedding(
-                    event_name=folder_data.name,
-                    images=batch,
-                    s3_utils=s3_utils,
-                    db_session=db_session,
-                    user_id=user_id,
-                    folder_id=folder_data.id,
-                )
-                all_presigned_urls.extend(presigned_urls)
-
-            # Set the flag to True after successfully uploading images to S3
-            images_uploaded_to_s3 = True
-
-            # Update folder storage in the database
-            match_criteria = {"name": folder_data.name, "user_id": user_id}
-            updated_folder_storage = folder_data.total_size + output_validated_storage
-            
-            await upsert_folder_metadata_DB(
-                db_session=db_session,
-                match_criteria=match_criteria,
-                update_fields={"total_size": updated_folder_storage},
-                model=SmartShareFolder,
-                update=True
-            )
-
-            # Update the user's storage in the database
-            is_valid, db_storage_response = await update_user_storage_in_db(
-                db_session=db_session,
-                module=settings.APP_SMART_SHARE_MODULE,
-                total_image_size=output_validated_storage,
-                user_id=user_id,
-                increment=True
-            )
-            if not is_valid:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST, 
-                    detail=str(db_storage_response)
-                )
-
-            result = {
-                'message': f'URLs are valid for {settings.PRESIGNED_URL_EXPIRY_SEC} seconds',
-                'urls': all_presigned_urls,
-            }
-            return result
+           return await upload_smart_share_event_images(db_session=db_session, event_id=event_id, images=images, user_id=user_id)
 
     except HTTPException as e:
-        # Rollback is automatically done by db_session.begin() if an exception occurs.
-        if folder_name and images_uploaded_to_s3:  # Only delete from S3 if images were uploaded
-            await s3_utils.delete_object(
-                folder_key=f'{user_id}/{folder_name}/', rollback=True
-            )
-        return JSONResponse(
-            status_code=e.status_code,
-            content={"detail": e.detail} 
-            )
+        raise e
 
     except Exception as e:
-        if folder_name and images_uploaded_to_s3:  # Only delete from S3 if images were uploaded
-            await s3_utils.delete_object(
-                folder_key=f'{user_id}/{folder_name}/', rollback=True
-            )
-        raise HTTPException(
+        return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
-            detail=str(e)
+            content=str(e)
         )
 
 
@@ -772,7 +664,7 @@ async def delete_event(event_name:str, request:Request, db_session:DBSessionDep,
     try:
         async with db_session.begin():
             # Call to delete event from S3 and database
-            s3_response, db_response = await delete_event_s3_db_collection(
+            s3_response, db_response = await delete_event_s3_db(
                 db_session=db_session,
                 event_name=event_name,
                 s3_utils_obj=s3_utils,
@@ -781,9 +673,9 @@ async def delete_event(event_name:str, request:Request, db_session:DBSessionDep,
         
             # Check if the deletion failed for either S3 or the database
             if db_response.get("message") != "success" or s3_response.get("message") != "Objects deleted successfully":
-                raise HTTPException(
+                return JSONResponse(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail=f"S3 Response: {s3_response}, DB Response: {db_response}"
+                    content=f"S3 Response: {s3_response}, DB Response: {db_response}"
                 )
                 
             # Commit all changes if successful

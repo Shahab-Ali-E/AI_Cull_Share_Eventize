@@ -39,15 +39,15 @@ async def delete_s3_folder_and_update_db(del_folder_path: str, db_session: Async
     # Raise an error if the folder is not found in the database
     if not folder_data:
         return JSONResponse(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    content=f'Folder with name {folder_name} not found!'
-                )
-    
-    if folder_data.culling_in_progress is True:
+            status_code=status.HTTP_404_NOT_FOUND,
+            content=f'Folder with name {folder_name} not found!'
+        )
+
+    if folder_data.culling_in_progress or (folder_data.uploading_in_progress and folder_data.uploading_task_id):
         return JSONResponse(
-                    status_code=status.HTTP_423_LOCKED,
-                    content=f'Unable to Delete Folder While Culling is In Progress'
-                )
+            status_code=status.HTTP_423_LOCKED, 
+            content='Unable to Delete Folder While Culling or Uploading is In Progress'
+        )
 
     # Attempt to delete the folder from Database
     try:        
@@ -67,12 +67,12 @@ async def delete_s3_folder_and_update_db(del_folder_path: str, db_session: Async
         s3_response, status_code = await s3_obj.delete_object(folder_key=del_folder_path)
 
         # Check S3 deletion response
-        if status_code == 404:
-            await db_session.rollback()
-            raise HTTPException(
-                status_code=status_code,
-                detail=s3_response
-            )
+        # if status_code == 404:
+        #     await db_session.rollback()
+        #     return JSONResponse(
+        #         status_code=status_code,
+        #         content=s3_response["message"]
+        #     )
         
     except HTTPException as e:
         await db_session.rollback()
@@ -80,9 +80,9 @@ async def delete_s3_folder_and_update_db(del_folder_path: str, db_session: Async
         
     except Exception as e:
         await db_session.rollback()
-        raise HTTPException(
+        return JSONResponse(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Error occurred: {str(e)}"
+            content=f"Error occurred: {str(e)}"
         )
 
     return s3_response, db_response

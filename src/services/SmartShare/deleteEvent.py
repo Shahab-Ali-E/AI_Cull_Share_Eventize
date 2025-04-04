@@ -5,12 +5,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from config.settings import get_settings
 from fastapi import HTTPException, status
 
-from model.SmartShareFolders import SmartShareFolder
+from model.SmartShareFolders import PublishStatus, SmartShareFolder
 from utils.UpdateUserStorage import update_user_storage_in_db
 
 settings = get_settings()
 
-async def delete_event_s3_db_collection(db_session:AsyncSession, s3_utils_obj, user_id:str, event_name:str):
+async def delete_event_s3_db(db_session:AsyncSession, s3_utils_obj, user_id:str, event_name:str):
 
     # Retrieve event metadata from the database
     event_data = (await db_session.scalars(select(SmartShareFolder).where(SmartShareFolder.name == event_name,
@@ -21,6 +21,12 @@ async def delete_event_s3_db_collection(db_session:AsyncSession, s3_utils_obj, u
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Event with name '{event_name}' not found in database"
+        )
+    
+    if event_data.status.value == PublishStatus.PENDING.value or (event_data.uploading_in_progress and event_data.uploading_task_id):
+        raise HTTPException(
+            status_code=status.HTTP_423_LOCKED, 
+            detail='Unable to Delete event While Publishing or Uploading is In Progress'
         )
 
     # Attempt to delete the event from Database

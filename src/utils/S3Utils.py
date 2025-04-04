@@ -195,8 +195,7 @@ class S3Utils:
             self.create_object(root_folder)
         
         if await self.folder_exists(main_folder):
-            raise FolderAlreadyExistsException(f'Main folder "{main_folder}" already exists.')
-        else:
+            await self.delete_object(folder_key=f'{root_folder}/{main_folder}/')
             await self.create_object(main_folder)
 
         #creating folder here

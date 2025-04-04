@@ -30,6 +30,8 @@ class SmartShareFolder(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     path_in_s3: Mapped[str] = mapped_column(nullable=False)
     total_size: Mapped[int] = mapped_column(default=0)
+    uploading_in_progress: Mapped[bool] = mapped_column(nullable=False, default=False)
+    uploading_task_id: Mapped[str] = mapped_column(nullable=True, default=None)
     status = mapped_column(SqlEnum(PublishStatus, values_callable=get_enum_values, name="publishstatus"), nullable=False, default=PublishStatus.NOT_PUBLISHED.value)
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     
