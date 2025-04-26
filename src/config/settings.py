@@ -14,7 +14,9 @@ class Settings(BaseSettings):
 
     # App
     APP_NAME:  str = os.environ.get("APP_NAME", "")
+    APP_HOSTED_URL:  str = os.environ.get("APP_HOSTED_URL", "")
     DEBUG: bool = bool(os.environ.get("DEBUG", False))
+    
     APP_SMART_CULL_MODULE:str = os.environ.get('APP_SMART_CULL_MODULE',None)
     APP_SMART_SHARE_MODULE:str = os.environ.get('APP_SMART_SHARE_MODULE',None)
     MAX_SMART_CULL_MODULE_STORAGE:int = os.environ.get('MAX_SMART_CULL_MODULE_STORAGE',100000000)
@@ -28,8 +30,9 @@ class Settings(BaseSettings):
     MAIL_FROM:str = os.environ.get('MAIL_FROM',None)
     MAIL_FROM_NAME:str = os.environ.get('MAIL_FROM_NAME',None)
     
-    # FrontEnd Application
+    # FrontEnd and Backend hosted Application
     FRONTEND_HOST: str = os.environ.get("FRONTEND_HOST", "http://localhost:3000")
+    HOSTED_BACKEND_URL: str = os.environ.get("HOSTED_BACKEND_URL", "http://127.0.0.1")
 
     # MySql Database Config
     POSTGRES_HOST: str = os.environ.get("POSTGRES_HOST", 'localhost')

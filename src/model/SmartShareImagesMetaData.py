@@ -1,3 +1,4 @@
+import uuid
 from sqlalchemy import ForeignKey, DateTime, func, UUID
 from sqlalchemy.orm import relationship
 from config.Database import Base
@@ -11,7 +12,7 @@ if TYPE_CHECKING:
 class SmartShareImagesMetaData(Base):
     __tablename__ = "smart_share_images_metadata"
 
-    id: Mapped[str] = mapped_column(primary_key=True, nullable=False)
+    id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(nullable=False)
     file_type: Mapped[str] = mapped_column(nullable=False)
     upload_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

@@ -1,6 +1,5 @@
-import uuid
 from config.Database import Base
-from sqlalchemy import DateTime, func, UUID
+from sqlalchemy import DateTime, func
 from sqlalchemy.orm import relationship
 from sqlalchemy.orm import mapped_column, Mapped
 from typing import List,TYPE_CHECKING

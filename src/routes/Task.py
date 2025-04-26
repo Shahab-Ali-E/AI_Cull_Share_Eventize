@@ -1,4 +1,7 @@
 from fastapi import APIRouter,Request
+from fastapi.responses import JSONResponse
+from sqlalchemy import MetaData, Table, select
+from dependencies.core import DBSessionDep
 from dependencies.user import get_user
 import asyncio
 import json
@@ -11,7 +14,7 @@ router = APIRouter(
 
 
 @router.get("/task_status/{task_id}")
-async def get_task_status(request:Request,task_id: str):
+async def get_task_status(request:Request,task_id: str, db_session:DBSessionDep):
     """
     🔄 **Retrieve the Status of a Background Culling Task** 🔄
 
@@ -27,6 +30,32 @@ async def get_task_status(request:Request,task_id: str):
     - ❓ **404 Not Found**: The specified task ID does not exist.
     - ⚠️ **500 Internal Server Error**: An unexpected error occurred while retrieving the task status.
     """
+    # #  Reflect the Celery result table
+    # metadata = MetaData()
+    # celery_meta = Table(
+    #     'celery_taskmeta',
+    #     metadata,
+    #     autoload_with=db_session.bind
+    # )
+    # stmt = (
+    #     select(celery_meta.c.task_id,
+    #            celery_meta.c.status,
+    #            celery_meta.c.result)
+    #     .where(celery_meta.c.task_id == task_id)
+    # )
+    # row = db_session.execute(stmt).first()
+
+    # # 32 If already finished, send immediate JSON
+    # if row:
+    #     return JSONResponse({
+    #         'state': row.status,
+    #         'status': (
+    #             'Task completed successfully.'
+    #             if row.status == 'SUCCESS'
+    #             else f'Task ended with status: {row.status}'
+    #         ),
+    #         'result': row.result
+    #     })
     # Define an asynchronous function that generates events based on the state of a task.
     async def event_generator(task_id):      
         

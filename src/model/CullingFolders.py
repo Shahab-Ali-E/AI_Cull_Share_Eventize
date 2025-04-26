@@ -1,9 +1,11 @@
 from datetime import datetime
-from sqlalchemy import ForeignKey, DateTime, func, UUID
+from sqlalchemy import ForeignKey, DateTime, func, UUID, String
 from sqlalchemy.orm import relationship, Mapped, mapped_column
 from config.Database import Base
 from typing import List, TYPE_CHECKING
 import uuid
+from sqlalchemy import JSON
+
 
 if TYPE_CHECKING:
     from model.User import User
@@ -20,8 +22,7 @@ class CullingFolder(Base):
     total_size: Mapped[int] = mapped_column(default=0)
     culling_done: Mapped[bool] = mapped_column(nullable=False, default=False)
     culling_in_progress: Mapped[bool] = mapped_column(nullable=False, default=False)
-    uploading_in_progress: Mapped[bool] = mapped_column(nullable=False, default=False)
-    uploading_task_id: Mapped[str] = mapped_column(nullable=True, default=None)
+    culling_task_ids: Mapped[List[str]] = mapped_column(JSON, nullable=True, default=list)
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     
     # Relationship back to User

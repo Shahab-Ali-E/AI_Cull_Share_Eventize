@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.future import select
 from typing import Dict, List, Type
 from sqlalchemy.orm import DeclarativeMeta
+from sqlalchemy import insert
 
 
 
@@ -212,3 +213,41 @@ async def upsert_folder_metadata_DB(db_session: AsyncSession, match_criteria: di
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Error saving or updating metadata: {str(e)}")
     
     return {"status": "COMPLETED", "data": existing_record}
+
+async def insert_image_metadata_async(
+    db_session: AsyncSession,
+    bulk_insert_fields: List[Dict],
+    model: Type[DeclarativeMeta]
+) -> dict:
+    """
+    Asynchronously bulk-inserts new image metadata records into the database.
+
+    Args:
+        db_session (AsyncSession): The SQLAlchemy async session.
+        bulk_insert_fields (List[Dict]): A list of dicts, each with the kwargs for one model instance.
+        model (DeclarativeMeta): The SQLAlchemy model class.
+
+    Raises:
+        Exception: If bulk_insert_fields is empty or if the insert fails.
+
+    Returns:
+        dict: { "status": "COMPLETED", "message": ..., "images_metadata": [model instances] }
+    """
+    if not bulk_insert_fields:
+        raise Exception('no object found in "bulk_insert_fields" to insert')
+
+    # Pre‐build instances for returning (they won’t be in the session, but carry your data)
+    new_records = [model(**data) for data in bulk_insert_fields]
+
+    try:
+        stmt = insert(model)
+        # this issues a single multi‐row INSERT
+        await db_session.execute(stmt, bulk_insert_fields)
+        return {
+            "status": "COMPLETED",
+            "message": "Successfully inserted all metadata to database",
+            "images_metadata": new_records
+        }
+    except SQLAlchemyError as e:
+        await db_session.rollback()
+        raise Exception(f"Error inserting image metadata: {str(e)}")

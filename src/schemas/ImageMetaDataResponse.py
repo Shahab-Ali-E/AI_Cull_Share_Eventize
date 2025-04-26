@@ -12,20 +12,25 @@ from datetime import datetime
 # class ImageMetaDataResponse(BaseModel):
 #    image:str
 
+class BaseImageMetaModel(BaseModel):
+    name: str
+    file_type: str
+    image_download_path: str
+    image_download_validity: datetime
+
 class PresingedUrlBeforeCullResponse(BaseModel):
     url: str
 
-class CulledImagesMetadataResponse(BaseModel):
+class ImagesMetadata(BaseImageMetaModel):
     id: str
-    name: str
-    file_type: str
-    image_download_path: str
-    image_download_validity: datetime
 
-class SmartShareImageResponse(BaseModel):
-    id: str
-    name: str
-    file_type: str
+class temporaryImagesMetadata(BaseImageMetaModel):
+    culling_folder_id: UUID4
+
+class SmartShareImageResponse(BaseImageMetaModel):
+    id: UUID4
     upload_at: datetime
-    image_download_path: str
-    image_download_validity: datetime
+
+class SmartShareEventImagesMeta(BaseImageMetaModel):
+    smart_share_folder_id:str
+    

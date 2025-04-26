@@ -30,8 +30,8 @@ class TemporaryImageURL(Base):
     id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(nullable=False)
     file_type: Mapped[str] = mapped_column(nullable=False)
-    url: Mapped[str] = mapped_column(nullable=False)
-    validity: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True, server_default=func.now())
+    image_download_path: Mapped[str] = mapped_column(nullable=False)
+    image_download_validity: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True, server_default=func.now())
     culling_folder_id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("culling_folders.id", ondelete="CASCADE"), nullable=False)
 
     # Relationship to CullingFolder

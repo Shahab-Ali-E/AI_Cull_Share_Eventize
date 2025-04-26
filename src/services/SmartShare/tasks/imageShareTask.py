@@ -50,7 +50,7 @@ def get_face_embedding(image_path):
 #-----------------------Celery task for smart share----------------------------------
 
 @celery.task(name='download_and_process_images', bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={'max_retries': 4}, queue='smart_sharing')
-def download_and_process_images(self, event_id, event_name:str, event_folder_path: str, urls: list[str], index_faiss_filename: str, image_map_pickle_filename: str, recipients:list[str]):
+def download_and_process_images(self, user_id, user_name:str, event_id, event_name:str, event_folder_path: str, urls: list[str], index_faiss_filename: str, image_map_pickle_filename: str, recipients:list[str]):
     """Downloads images from AWS, saves them locally, and processes them for face embeddings."""
 
     # Ensure event folder exists
@@ -175,20 +175,31 @@ def download_and_process_images(self, event_id, event_name:str, event_folder_pat
     # Send email after processing
     
     # Generate QR Code
+    # Define the path to save the QR code
+    qr_relative_path = os.path.join("smart_share_events", str(user_id), str(event_id))
+    qr_filename = "qr_code.png"
+    qr_full_path = os.path.join("static", qr_relative_path)
+    os.makedirs(qr_full_path, exist_ok=True)
+    qr_save_path = os.path.join(qr_full_path, qr_filename)
+
+    # Generate and save the QR code
     share_event_link = f'{settings.FRONTEND_HOST}/get-images/{event_id}'
-    qr_code_base64 = generate_qr_code(event_link=share_event_link)
+    generate_qr_code(event_link=share_event_link, save_path=qr_save_path)
+
+    # Construct the URL to access the QR code
+    qr_code_url = f"{settings.HOSTED_BACKEND_URL}/static/smart_share_events/{user_id}/{event_id}/{qr_filename}"
     
     # Render Jinja2 Email Template
     html_content = templates.get_template("SmartShareEventShareEmail.html").render(
         subject=f"🎉 {event_name} is Live Now!",
         event_name=event_name,
         event_link=share_event_link,
-        qr_code_base64=qr_code_base64,  # Pass base64 QR
+        qr_code_url=qr_code_url, 
+        user_name=user_name
     )
     
     # Email Subject & Body
     subject = f"🎉 {event_name} is Live!"
-    body = f"Your event {event_name} is now live! Check your email for details."
 
     # Send Email via Celery Worker
     chain(

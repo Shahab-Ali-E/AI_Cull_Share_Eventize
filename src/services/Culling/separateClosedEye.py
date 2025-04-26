@@ -1,5 +1,7 @@
 from datetime import datetime, timedelta
 import io
+import os
+import time
 from uuid import uuid4
 import cv2
 import numpy as np
@@ -87,61 +89,130 @@ class ClosedEyeDetection:
         
         return {image_data['name']: ["OpenFace"]}
 
-    async def separate_closed_eye_images_and_upload_to_s3(self, images, folder_id, task=None, prev_images_metadata=None):
+    async def separate_closed_eye_images_and_upload_to_s3(self, images_path, folder_id, task=None, prev_images_metadata=None):
         prev_images_metadata = prev_images_metadata or []
-        open_eye_images, metadata_list, total_images = [], prev_images_metadata, len(images)
+        open_eye_images = []
+        metadata_list = prev_images_metadata.copy()
+        total_images = len(images_path)
 
-        async def upload_closed_eye_image(image_name, image_content, content_type):
-            filename = f"{uuid4()}__{image_name}"
-            byte_arr = io.BytesIO()
-            
-            # Normalize format
-            format_map = {
-                "image/jpeg": "JPEG",
-                "image/jpg": "JPEG",
-                "image/png": "PNG",
-                "image/webp": "WEBP",
-            }
-            
-            format = format_map.get(content_type.lower(), "JPEG")  # Default to JPEG if unknown
-            
-            Image.open(io.BytesIO(image_content)).convert('RGB').save(byte_arr, format=format)
-            byte_arr.seek(0)
-
-            key = f"{self.root_folder}/{self.inside_root_main_folder}/{self.upload_image_folder}/{filename}"
-            await self.S3.upload_smart_cull_images(self.root_folder, self.inside_root_main_folder, self.upload_image_folder, byte_arr, filename)
-            presigned_url = await self.S3.generate_presigned_url(key, expiration=settings.PRESIGNED_URL_EXPIRY_SEC)
-
-            return {
-                'id': filename,
-                'name': image_name,
-                'detection_status': 'ClosedEye',
-                'file_type': format,
-                'image_download_path': presigned_url,
-                'image_download_validity': datetime.now() + timedelta(seconds=settings.PRESIGNED_URL_EXPIRY_SEC),
-                'culling_folder_id': folder_id
-            }
-
-
-        async def process_single_image(index, image):
-            logger.info(f"Processing image {index + 1}/{total_images}: {image['name']}")
-            results = await self.process_image(image)
-            
-            for image_name, prediction in results.items():
-                logger.info(f"Image {image_name}: Prediction {prediction}")
+        async def upload_closed_eye_image(image_info):
+            try:
+                # Read image from local path
+                with open(image_info['local_path'], 'rb') as f:
+                    image_content = f.read()
                 
-                if "ClosedFace" in prediction:
-                    metadata_list.append(await upload_closed_eye_image(image_name, image['content'], image.get('content_type')))
-                else:
-                    open_eye_images.append(image)
+                # Process and upload
+                filename = f"{uuid4()}__{image_info['name']}"
+                byte_arr = io.BytesIO()
+                
+                # Normalize format
+                format_map = {
+                    "image/jpeg": "JPEG",
+                    "image/jpg": "JPEG",
+                    "image/png": "PNG",
+                    "image/webp": "WEBP",
+                }
+                
+                img_format = format_map.get(image_info['content_type'].lower(), "JPEG")
+                Image.open(io.BytesIO(image_content)).convert('RGB').save(byte_arr, format=img_format)
+                byte_arr.seek(0)
 
-            if task:
-                task.update_state(state='PROGRESS', meta={'progress': ((index + 1) / total_images) * 100, 'info': 'Processing images'})
+                # Upload to S3
+                key = f"{self.root_folder}/{self.inside_root_main_folder}/{self.upload_image_folder}/{filename}"
+                await self.S3.upload_smart_cull_images(
+                    self.root_folder, 
+                    self.inside_root_main_folder, 
+                    self.upload_image_folder, 
+                    byte_arr, 
+                    filename
+                )
+                
+                # Generate presigned URL
+                presigned_url = await self.S3.generate_presigned_url(
+                    key, 
+                    expiration=settings.PRESIGNED_URL_EXPIRY_SEC
+                )
 
+                # Cleanup local file
+                os.remove(image_info['local_path'])
 
-        await asyncio.gather(*[process_single_image(i, img) for i, img in enumerate(images)])
+                return {
+                    'id': filename,
+                    'name': image_info['name'],
+                    'detection_status': 'ClosedEye',
+                    'file_type': img_format,
+                    'image_download_path': presigned_url,
+                    'image_download_validity': datetime.now() + timedelta(seconds=settings.PRESIGNED_URL_EXPIRY_SEC),
+                    'culling_folder_id': folder_id
+                }
+            except Exception as e:
+                logger.error(f"Failed to upload closed eye image: {str(e)}")
+                return None
 
+        async def process_single_image(index, image_info):
+            try:
+                logger.info(f"Processing image {index + 1}/{total_images}: {image_info['name']}")
+                
+                # Load image from local path
+                with open(image_info['local_path'], 'rb') as f:
+                    image_content = f.read()
+                
+                # Perform detection
+                results = await self.process_image({
+                    'content': image_content,
+                    'name': image_info['name'],
+                    'local_path': image_info['local_path']
+                })
+
+                for image_name, prediction in results.items():
+                    logger.info(f"Image {image_name}: Prediction {prediction}")
+                    
+                    if "ClosedFace" in prediction:
+                        metadata = await upload_closed_eye_image(image_info)
+                        if metadata:
+                            metadata_list.append(metadata)
+                    else:
+                        # Retain local path for open-eye images
+                        open_eye_images.append({
+                            'local_path': image_info['local_path'],
+                            'name': image_info['name'],
+                            'content_type': image_info['content_type']
+                        })
+
+                # Update progress
+                if task:
+                    progress = ((index + 1) / total_images) * 100
+                    task.update_state(
+                        state='PROGRESS',
+                        meta={'progress': round(progress, 2), 'info': f'Processed {image_info["name"]}'}
+                    )
+
+            except Exception as e:
+                logger.error(f"Error processing {image_info['name']}: {str(e)}")
+                if task:
+                    task.update_state(
+                        state='PROGRESS',
+                        meta={'progress': ((index + 1) / total_images) * 100, 
+                            'info': f'Failed {image_info["name"]}: {str(e)}'}
+                    )
+
+        # Process images concurrently
+        await asyncio.gather(*[
+            process_single_image(i, img) 
+            for i, img in enumerate(images_path)
+        ])
+
+        # Final status update
         if task:
-            task.update_state(state='SUCCESS', meta={'progress': 100, 'info': 'Processing complete'})
+            task.update_state(
+                state='SUCCESS',
+                meta={'progress': 100, 'info': 'Closed eye processing complete'}
+            )
 
-        return {'status': 'SUCCESS', 'open_eye_images': open_eye_images, 'images_metadata': metadata_list, 's3_response': 'Upload Complete'}
+        time.sleep(0.2)
+        return {
+            'status': 'SUCCESS',
+            'open_eye_images': open_eye_images,
+            'images_metadata': metadata_list,
+            's3_response': 'Closed eye images processed successfully'
+        }

@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+import os
 from typing import List, Optional
 from uuid import UUID, uuid4
 
@@ -8,21 +9,19 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import asc, desc, func
 from sqlalchemy.future import select
 
-from config.security import validate_images_and_storage
 from config.settings import get_settings
 from dependencies.core import DBSessionDep
 from dependencies.user import get_user
 from model.CullingFolders import CullingFolder
 from model.CullingImagesMetaData import ImagesMetaData, TemporaryImageURL
 from model.User import User
-from schemas.FolderMetaDataResponse import CullingFolderMetaDataById, GetAllCullingFoldersResponse, TemporaryImageURLResponse, UploadCullingImagesResponse
-from schemas.ImageMetaDataResponse import CulledImagesMetadataResponse
+from schemas.FolderMetaDataResponse import CullingFolderMetaDataById, GetAllCullingFoldersResponse, TemporaryImageURLResponse
+from schemas.ImageMetaDataResponse import ImagesMetadata, temporaryImagesMetadata
 from schemas.ImageTaskData import ImageTaskData
 from services.Culling.createFolderInS3 import create_folder_in_S3
 from services.Culling.deleteFolderFromS3 import delete_s3_folder_and_update_db
+from services.Culling.savePreCullImagesMetadata import save_pre_cull_images_metadata
 from services.Culling.tasks.cullingTask import culling_task
-from services.Culling.tasks.cullingImagesUploadingTask import upload_preculling_images_and_insert_metadata
-from services.Culling.uploadImages import upload_before_culling_images
 from utils.S3Utils import S3Utils
 
 router = APIRouter(
@@ -125,7 +124,6 @@ async def get_all_folders(
 
 @router.get("/get_folder_id/{folder_id}", response_model=CullingFolderMetaDataById)
 async def get_folder_by_id(
-    request: Request,
     db_session: DBSessionDep,
     folder_id: UUID,
     user: User = Depends(get_user)
@@ -172,7 +170,7 @@ async def get_folder_by_id(
             updated_urls = []
             
             for data in temp_urls:
-                validity_time = data.validity
+                validity_time = data.image_download_validity
                 current_time = datetime.now(timezone.utc)
                 
                 if current_time < validity_time:
@@ -180,8 +178,9 @@ async def get_folder_by_id(
                         id=data.id,
                         name=data.name,
                         file_type=data.file_type,
-                        image_download_path=data.url,
-                        image_download_validity=validity_time
+                        image_download_path=data.image_download_path,
+                        image_download_validity=validity_time,
+                        culling_folder_id=data.culling_folder_id
                     ))
                 else:
                     await db_session.delete(data)  # Remove invalid URLs
@@ -196,9 +195,8 @@ async def get_folder_by_id(
                 total_size=folder.total_size,
                 culling_done=folder.culling_done,
                 culling_in_progress=folder.culling_in_progress,
+                culling_task_ids=folder.culling_task_ids,
                 temporary_images_urls=updated_urls,
-                uploading_in_progress=folder.uploading_in_progress,
-                uploading_task_id=folder.uploading_task_id
             )
 
         except HTTPException as e:
@@ -207,10 +205,9 @@ async def get_folder_by_id(
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
         
 
-@router.get('/culled_images_metadata/{folder_id}/{detection_status}', response_model=List[CulledImagesMetadataResponse])
+@router.get('/culled_images_metadata/{folder_id}/{detection_status}', response_model=List[ImagesMetadata])
 async def get_culled_images_metadata(
     folder_id: UUID,
-    request: Request,
     db_session: DBSessionDep,
     user: User = Depends(get_user),
     detection_status: Optional[str] = None
@@ -339,8 +336,8 @@ async def create_directory(dir_name:str, request:Request,  db_session: DBSession
        
     async with db_session.begin():
         try:
-            response =  await create_folder_in_S3(dir_name=dir_name.lower(), s3_utils_obj=s3_utils, db_session=db_session, user_id=user_id)
-            return response
+            return await create_folder_in_S3(dir_name=dir_name.lower(), s3_utils_obj=s3_utils, db_session=db_session, user_id=user_id)
+        
         except HTTPException as e:
             await db_session.rollback()
             raise HTTPException(status_code=e.status_code, detail=str(e))
@@ -348,40 +345,91 @@ async def create_directory(dir_name:str, request:Request,  db_session: DBSession
             await db_session.rollback()
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
+ 
+            
+# @router.post('/upload_images/{folder_id}', status_code=status.HTTP_202_ACCEPTED, response_model=UploadCullingImagesResponse)
+# async def upload_images(folder_id: str, db_session: DBSessionDep,user: User = Depends(get_user), images: list[UploadFile] = File(...)):
+#     """
+#     📸 **Upload Images to S3 and Initiate Background Culling Task** 📸
 
-@router.post('/upload_images/{folder_id}', status_code=status.HTTP_202_ACCEPTED, response_model=UploadCullingImagesResponse)
-async def upload_images(folder_id: str, db_session: DBSessionDep,user: User = Depends(get_user), images: list[UploadFile] = File(...)):
-    """
-    📸 **Upload Images to S3 and Initiate Background Culling Task** 📸
+#     This endpoint efficiently **handles image uploads** to S3 and kicks off a background process for image culling. It manages the upload of images to a specified S3 folder and then generates and sends their URLs to a Celery task for further processing. This background task will handle image culling asynchronously, ensuring a smooth user experience.
 
-    This endpoint efficiently **handles image uploads** to S3 and kicks off a background process for image culling. It manages the upload of images to a specified S3 folder and then generates and sends their URLs to a Celery task for further processing. This background task will handle image culling asynchronously, ensuring a smooth user experience.
+#     ### Parameters:
+#     - **`folder`** *(str)*: 🗂️ The name of the destination folder in S3 where the images will be stored.
+#     - **`images`** *(list[UploadFile])*: 🖼️ A collection of images to be uploaded. Ensure the images meet size and format requirements.
+#     - **`session`**: 🗃️ The database session used for executing queries related to image and folder validation.
+#     - **`user`**: 👤 The user making the request, obtained through dependency injection to ensure authorized access.
+#     - **`request`**: 🧾 Contains session details necessary for authentication.
 
-    ### Parameters:
-    - **`folder`** *(str)*: 🗂️ The name of the destination folder in S3 where the images will be stored.
-    - **`images`** *(list[UploadFile])*: 🖼️ A collection of images to be uploaded. Ensure the images meet size and format requirements.
-    - **`session`**: 🗃️ The database session used for executing queries related to image and folder validation.
-    - **`user`**: 👤 The user making the request, obtained through dependency injection to ensure authorized access.
-    - **`request`**: 🧾 Contains session details necessary for authentication.
+#     ### Workflow:
+#     1. **🔍 Folder Validation**: Verifies if the specified folder exists within the culling module. Ensures proper placement of images.
+#     2. **⚖️ Image and Storage Validation**: Checks the images for correct size and format. Confirms that storage usage remains within the user’s allowed limits.
+#     3. **☁️ Upload to S3**: Uploads the validated images to S3 and updates their metadata in the database.
+#     4. **🛠️ Task Dispatch**: Sends the URLs of the uploaded images to a Celery task for background culling. This process includes actions such as face extraction and embedding preparation.
 
-    ### Workflow:
-    1. **🔍 Folder Validation**: Verifies if the specified folder exists within the culling module. Ensures proper placement of images.
-    2. **⚖️ Image and Storage Validation**: Checks the images for correct size and format. Confirms that storage usage remains within the user’s allowed limits.
-    3. **☁️ Upload to S3**: Uploads the validated images to S3 and updates their metadata in the database.
-    4. **🛠️ Task Dispatch**: Sends the URLs of the uploaded images to a Celery task for background culling. This process includes actions such as face extraction and embedding preparation.
-
-    ### Responses:
-    - 🎉 **202 Accepted**: Your images are successfully accepted for processing. The culling task has been initiated and will run in the background.
-    - ❓ **404 Not Found**: The specified folder does not exist. Please check the folder name.
-    - 📉 **415 Unsupported Media Type**: The images provided are invalid or exceed the allowed size/storage limits.
-    - ⚠️ **500 Internal Server Error**: An unexpected error occurred during the processing. This could be due to issues with S3, the database, or the task dispatching system.
-    """
-    try:
-        user_id = user.get('id')
+#     ### Responses:
+#     - 🎉 **202 Accepted**: Your images are successfully accepted for processing. The culling task has been initiated and will run in the background.
+#     - ❓ **404 Not Found**: The specified folder does not exist. Please check the folder name.
+#     - 📉 **415 Unsupported Media Type**: The images provided are invalid or exceed the allowed size/storage limits.
+#     - ⚠️ **500 Internal Server Error**: An unexpected error occurred during the processing. This could be due to issues with S3, the database, or the task dispatching system.
+#     """
+#     try:
+#         user_id = user.get('id')
       
-        # Begin a single transaction for the entire process
-        async with db_session.begin():
-            return await upload_before_culling_images(db_session=db_session, folder_id=folder_id, images=images, user_id=user_id)
+#         # Begin a single transaction for the entire process
+#         async with db_session.begin():
+#             return await upload_before_culling_images(db_session=db_session, folder_id=folder_id, images=images, user_id=user_id)
         
+#     except HTTPException as e:
+#         raise e
+#     except Exception as e:
+#         raise HTTPException(
+#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+#             detail=f"An unexpected error occurred: {str(e)}"
+#         )
+
+
+@router.post('/save_uploaded_images_metadata/{folder_id}', status_code=status.HTTP_202_ACCEPTED)
+async def save_uploaded_images_metadata(folder_id: str, db_session: DBSessionDep, images_metadata:List[temporaryImagesMetadata], combined_size:int, user: User = Depends(get_user)):
+    """
+    📝 **Save S3 Uploaded Image Metadata** 📝
+
+    This endpoint is responsible for saving the metadata of images that have already been uploaded to S3. It does **not** handle actual file uploads — only metadata storage. It also updates the corresponding **event folder's storage** and the **user's total storage usage**.
+
+    ---
+    
+    ### 📥 Parameters:
+    - **`folder_id`** *(str)*: 📁 ID of the folder where the images were uploaded.
+    - **`images_metadata`** *(List[temporaryImagesMetadata])*: 🖼️ List of metadata (filename, size, dimensions, etc.) for the uploaded images.
+    - **`combined_size`** *(int)*: 📊 Total size (in bytes) of all uploaded images.
+    - **`db_session`** *(AsyncSession)*: 🗃️ Injected database session for handling transactions.
+    - **`user`** *(User)*: 👤 Authenticated user making the request.
+
+    ---
+
+    ### ⚙️ Workflow:
+    1. 🔍 **Folder Validation**: Ensures the folder exists and belongs to the current user.
+    2. 🧪 **Metadata Validation**: Checks for valid image data, size limits, and formatting rules.
+    3. 🗂️ **Metadata Insertion**: Saves metadata for each image into the database.
+    4. 📈 **Storage Update**: Updates both the folder’s storage usage and the user’s total storage consumption.
+
+    ---
+
+    ### 📤 Responses:
+    - ✅ **202 Accepted**: Metadata successfully saved; background culling task may proceed.
+    - ❌ **404 Not Found**: Folder not found or unauthorized access.
+    - 🚫 **415 Unsupported Media Type**: Invalid or unsupported image metadata.
+    - ⚠️ **500 Internal Server Error**: Unexpected error during metadata saving or storage update.
+
+    """
+
+
+    user_id = user.get('id')
+    try:
+        async with db_session.begin():
+            return await save_pre_cull_images_metadata(db_session=db_session, user_id=user_id, combined_size=combined_size, folder_id=folder_id, images_metadata=images_metadata)
+           
+    
     except HTTPException as e:
         raise e
     except Exception as e:
@@ -389,6 +437,7 @@ async def upload_images(folder_id: str, db_session: DBSessionDep,user: User = De
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"An unexpected error occurred: {str(e)}"
         )
+
 
 # user: User = Depends(get_user)
 @router.post('/start_culling/', status_code=status.HTTP_102_PROCESSING, response_model=None)
@@ -418,33 +467,41 @@ async def start_culling(culling_data: ImageTaskData, db_session: DBSessionDep, u
     """
     
     user_id = user.get('id')
-   
-    async with db_session.begin():
-        #get folder data
-        folder_data = (await db_session.scalars(select(CullingFolder).where(CullingFolder.id==culling_data.folder_id, 
-                                                                        CullingFolder.user_id == user_id))).first()
-        
-        if not folder_data:
-            return JSONResponse(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    content=f'Folder with id {culling_data.folder_id} not found!'
-                )
-            
-        folder_data.culling_in_progress = True
-        db_session.add(folder_data)
-        await db_session.commit()
-        
+    
+    # async with db_session.begin():
+        # Get folder data
+    folder_data = (await db_session.scalars(
+        select(CullingFolder).where(
+            CullingFolder.id == culling_data.folder_id,
+            CullingFolder.user_id == user_id
+        )
+    )).first()
+
+    if not folder_data:
+        return JSONResponse(
+            status_code=status.HTTP_404_NOT_FOUND,
+            content=f'Folder with id {culling_data.folder_id} not found!'
+        )
+
+    # check if the local folder of the event exsist or not, if not then create one
+    local_folder_path = os.path.join("src","services","Culling","Culling_Folders_Data", f"{folder_data.id}")
+    if not os.path.exists(local_folder_path):
+        os.makedirs(local_folder_path, exist_ok=True)
+
     #Sending images URL and other info to Celery task
     try:
-        task = culling_task.apply_async(args=[user_id, culling_data.images_url, folder_data.name, folder_data.id])
+        task = culling_task.apply_async(args=[user_id, culling_data.images_url, folder_data.name, folder_data.id, local_folder_path])
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Error sending task to Celery: {str(e)}")
 
+       
+        # db_session.add(folder_data)
+    
     return JSONResponse({"task_id": task.id})
 
 
 @router.delete("/delete-folder/{dir_name}")
-async def delete_folder(dir_name:str, request:Request, db_session: DBSessionDep, user:User = Depends(get_user)):
+async def delete_folder(dir_name:str, db_session: DBSessionDep, user:User = Depends(get_user)):
     """
     🗑️ **Deletes a Folder from S3 and Removes its Record from the Database** 🗑️
 

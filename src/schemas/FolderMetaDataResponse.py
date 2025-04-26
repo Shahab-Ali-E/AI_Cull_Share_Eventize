@@ -3,6 +3,8 @@ from fastapi import UploadFile
 from datetime import datetime
 from typing import List, Optional
 
+from schemas.ImageMetaDataResponse import temporaryImagesMetadata
+
 class CullingFolderMetaData(BaseModel):
     id: UUID4
     name: str
@@ -10,15 +12,10 @@ class CullingFolderMetaData(BaseModel):
     total_size: int
     culling_done:bool
     culling_in_progress:bool
-    uploading_in_progress:bool
-    uploading_task_id:Optional[str] = None
+    culling_task_ids:Optional[List[str]]
 
-class TemporaryImageURLResponse(BaseModel):
+class TemporaryImageURLResponse(temporaryImagesMetadata):
     id: UUID4
-    name: str
-    file_type: str
-    image_download_path: str
-    image_download_validity: datetime 
     
 class CullingFolderMetaDataById(CullingFolderMetaData):
     temporary_images_urls:List[TemporaryImageURLResponse]

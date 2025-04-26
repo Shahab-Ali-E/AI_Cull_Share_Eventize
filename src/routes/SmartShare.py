@@ -17,10 +17,11 @@ from model.SmartShareFolders import PublishStatus, SmartShareFolder
 from model.SmartShareImagesMetaData import SmartShareImagesMetaData
 from model.User import User
 from schemas.FolderMetaDataResponse import  EventsResponse
-from schemas.ImageMetaDataResponse import SmartShareImageResponse
+from schemas.ImageMetaDataResponse import SmartShareEventImagesMeta, SmartShareImageResponse
 from schemas.ImageTaskData import ImageTaskData
 from services.SmartShare.createEvent import create_event_in_S3_and_DB
 from services.SmartShare.deleteEvent import delete_event_s3_db
+from services.SmartShare.saveEventImageMeta import save_event_images_metadata
 from services.SmartShare.secondary_user_service import associate_user_with_folder
 from services.SmartShare.similaritySearch import get_similar_images
 from services.SmartShare.tasks.imageShareTask import download_and_process_images
@@ -452,6 +453,45 @@ async def upload_images(event_id: str, db_session:DBSessionDep, images: list[Upl
         )
 
 
+@router.post('/save_event_images_meta/{event_id}')
+async def save_event_images_meta(event_id: str, db_session:DBSessionDep, images_metadata: list[SmartShareEventImagesMeta], combined_size:int, user: User = Depends(get_user)):
+    """
+    📸 **Upload Images to a Specified Folder** 📸
+
+    This endpoint allows an **authenticated user** to upload images into a designated folder within the **Smart Share** module. 📁 Make sure the folder already exists in the database before uploading your images. The uploaded images are validated for size and storage limits to ensure smooth processing. ✅ Once validated, they are uploaded to **S3**, and metadata is updated in the database. You'll receive a **presigned URL** for each image, which includes the expiration time.
+
+    🔒 **Authentication Required**: You must be logged in to upload images.
+
+    ### Path Parameters:
+    - **`folder`** *(str)*: The name of the folder where you want to upload your images.
+
+    ### Request Body:
+    - **`images`** *(list[UploadFile], required)*: A list of images to upload. You can upload up to 20 images with a total size not exceeding 100 MB.
+
+    ### Responses:
+    - 🟢 **202 Accepted**: **Success!** Images were uploaded, metadata updated, and presigned URLs with expiration times were returned.
+    - 🔴 **401 Unauthorized**: **Oops!** You need to be logged in to upload images.
+    - 🔍 **404 Not Found**: **Not Found!** The specified folder could not be found in the Smart Share module.
+    - 🚫 **415 Unsupported Media Type**: **Invalid Images!** The images are either invalid or exceed the allowed size/storage limits.
+    - 🟠 **500 Internal Server Error**: **Something went wrong!** An unexpected error occurred during the upload process.
+    """
+    user_id = user.get('id')
+    
+    try:
+        # Begin a single transaction for the entire process
+        async with db_session.begin():
+           return await save_event_images_metadata(db_session=db_session, event_id=event_id, images_metadata=images_metadata, user_id=user_id, combined_size=combined_size)
+
+    except HTTPException as e:
+        raise e
+
+    except Exception as e:
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
+            content=str(e)
+        )
+
+
 @router.post('/share_images', status_code=status.HTTP_102_PROCESSING)
 async def share_images(event_data: ImageTaskData, db_session: DBSessionDep, user: dict = Depends(get_user)):
     """
@@ -501,7 +541,7 @@ async def share_images(event_data: ImageTaskData, db_session: DBSessionDep, user
 
 
         try:
-            share_image_task = download_and_process_images.apply_async(args=[event_id, folder_data.name, event_folder_path, urls, f"{folder_data.name}.faiss", f"{folder_data.name}.pkl", [user.get('email')]])
+            share_image_task = download_and_process_images.apply_async(args=[user_id, user.get('username'), event_id, folder_data.name, event_folder_path, urls, f"{folder_data.name}.faiss", f"{folder_data.name}.pkl", [user.get('email')]])
         except Exception as e:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Error sending task to Celery: {str(e)}")
 
@@ -578,13 +618,15 @@ async def get_images(event_id: UUID, db_session: DBSessionDep, image: UploadFile
         
         found_images = []
         
+        print("\n\n\ matche arr", matches_arr)
+        
         for record in matches_arr:
             decoded_record = unquote(record)  # Decode URL-encoded characters for coverting %20 back to 'space' so we can get images 
             print("\n\n\n\n decoded record", decoded_record)
             result = await db_session.execute(
                 select(SmartShareImagesMetaData).where(
                     SmartShareImagesMetaData.smart_share_folder_id == folder_data.id,
-                    SmartShareImagesMetaData.id == decoded_record
+                    SmartShareImagesMetaData.name == decoded_record
                 )
             )
             found_result = result.scalar_one_or_none()
@@ -592,6 +634,9 @@ async def get_images(event_id: UUID, db_session: DBSessionDep, image: UploadFile
             
             if found_result:
                 found_images.append(found_result)
+
+        print("\n\n\ found_images", found_images)
+        print("\n\n\n")
 
         return found_images
 

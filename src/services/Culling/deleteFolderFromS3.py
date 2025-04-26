@@ -1,3 +1,6 @@
+import os
+import shutil
+import time
 from fastapi import HTTPException, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -43,10 +46,10 @@ async def delete_s3_folder_and_update_db(del_folder_path: str, db_session: Async
             content=f'Folder with name {folder_name} not found!'
         )
 
-    if folder_data.culling_in_progress or (folder_data.uploading_in_progress and folder_data.uploading_task_id):
+    if folder_data.culling_in_progress:
         return JSONResponse(
             status_code=status.HTTP_423_LOCKED, 
-            content='Unable to Delete Folder While Culling or Uploading is In Progress'
+            content='Unable to Delete Folder While Culling'
         )
 
     # Attempt to delete the folder from Database
@@ -73,6 +76,7 @@ async def delete_s3_folder_and_update_db(del_folder_path: str, db_session: Async
         #         status_code=status_code,
         #         content=s3_response["message"]
         #     )
+
         
     except HTTPException as e:
         await db_session.rollback()
