@@ -3,14 +3,14 @@ from tensorflow.keras.models import load_model  # type: ignore
 from tensorflow.keras.applications import ResNet50 # type: ignore
 from facenet_pytorch import MTCNN, InceptionResnetV1
 import torch
-import os
+
 
 # Singleton pattern to manage models
 class ModelManager:
     _models = None # Shared static instance
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print()
-    print()
+    print() 
     print("device", device)
 
     @staticmethod #this decoretor allow us to do not create instance of class we can call this function by just class name
@@ -44,6 +44,14 @@ class ModelManager:
             
             # FaceNet model for face embeddings
             face_net_model = InceptionResnetV1(pretrained='vggface2').eval()
+            
+            # face_net_model = InceptionResnetV1(pretrained=None, classify=False, device=ModelManager.device).to(ModelManager.device)
+            # face_net_model.eval()
+
+            # ckpt = torch.load(settings.FACE_NET_MODEL_WEIGHTS, map_location=ModelManager.device)
+            # face_net_model.load_state_dict(ckpt['model_state_dict'])
+
+            print("✅ Model weights loaded, ready for inference.")
 
             return {
                 "blur_detect_model": blur_detect_model,

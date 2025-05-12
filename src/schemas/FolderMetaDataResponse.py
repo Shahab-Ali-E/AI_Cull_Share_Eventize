@@ -36,8 +36,6 @@ class EventsMetaData(BaseModel):
     created_at: datetime
     total_size: int
     status:str
-    uploading_in_progress: bool
-    uploading_task_id: Optional[str]
 
 
 class EventsResponse(BaseModel):

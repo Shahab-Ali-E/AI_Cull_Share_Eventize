@@ -394,7 +394,7 @@ def culling_task(self, user_id:str, uploaded_images_url, folder:str, folder_id:s
 
         self.update_state(state='SUCCESS', meta={'status': 'Culling task executing in background', 'task_ids': task_ids})
     
-    except URLExpiredException() as e:
+    except URLExpiredException as e:
         self.update_state(state='FAILURE', meta={'status': str(e), 'task_ids': task_ids})
         raise
     except Exception as e:

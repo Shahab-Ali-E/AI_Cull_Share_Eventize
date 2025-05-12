@@ -277,8 +277,6 @@ async def get_event_by_id(
                 "created_at":event.created_at,
                 "total_size":event.total_size,
                 "images_data":images_urls,
-                "uploading_in_progress": event.uploading_in_progress,
-                "uploading_task_id": event.uploading_task_id,
                 "status":event.status
             }
 

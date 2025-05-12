@@ -3,13 +3,17 @@ from sqlalchemy.orm import sessionmaker
 from contextlib import contextmanager
 from config.settings import get_settings
 from typing import Iterator
+from ssl import create_default_context 
 
 settings = get_settings()
+# Create a default SSL context or pass True/"require" per your needs
+# ssl_context = create_default_context()
 
 # Create synchronous engine for Celery
 sync_engine = create_engine(
     settings.SYNC_DATABASE_URI,
     echo=True,
+    # connect_args={"ssl": ssl_context},
     pool_pre_ping=True,
     pool_recycle=1800,
     pool_size=10,        

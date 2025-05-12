@@ -53,6 +53,7 @@
 # #######################################
 
 # Use official Python slim image
+# Use official Python slim image
 FROM python:3.12-slim
 
 # Set environment variables for Poetry & Python
@@ -76,6 +77,7 @@ RUN apt-get update && apt-get install --no-install-recommends -y \
     build-essential \
     gcc \
     python3-dev \
+    supervisor \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Poetry
@@ -84,17 +86,21 @@ RUN pip install "poetry==$POETRY_VERSION"
 # Set working directory
 WORKDIR /app
 
-# Copy dependency files first (to leverage Docker cache)
-COPY poetry.lock pyproject.toml ./
+# Copy dependency files
+COPY poetry.lock pyproject.toml ./ 
 
-# Install dependencies inside a virtual environment
+# Install dependencies
 RUN poetry install --no-root --only main
 
-# Copy all project files
+# Copy project files
 COPY . .
 
-# Expose the port your application runs on
+# Copy supervisord config
+COPY supervisord.conf /etc/supervisord.conf
+
+# Expose port
 EXPOSE 8080
 
-# Start the application using Uvicorn
-CMD ["uvicorn", "src.main.main:app", "--host", "0.0.0.0", "--port", "8080"]
+# Use Supervisor to run both services
+CMD ["/usr/bin/supervisord", "-c", "/etc/supervisord.conf"]
+

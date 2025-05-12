@@ -41,13 +41,26 @@ class Settings(BaseSettings):
     POSTGRES_PORT: int = int(os.environ.get("POSTGRES_PORT", 5432))
     POSTGRES_DB: str = os.environ.get("POSTGRES_DB", "")
     
+    # Neon Database Config
+    POSTGRES_HOST: str = os.environ.get("POSTGRES_HOST", 'localhost')
+    NEON_DB_USER: str = os.environ.get("NEON_DB_USER", "")
+    NEON_DB_PASSWORD: str = os.environ.get("NEON_DB_PASSWORD", "")
+    POSTGRES_PORT: int = int(os.environ.get("POSTGRES_PORT", 5432))
+    Neon_DB_DATABASE: str = os.environ.get("Neon_DB_DATABASE", "")
+    
     if not POSTGRES_PASS:
         raise ValueError("POSTGRES_PASSWORD environment variable is not set or is empty.")
     # Async URI for standard async operations
-    DATABASE_URI: str = f"postgresql+asyncpg://{POSTGRES_USER}:{quote_plus(POSTGRES_PASS)}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}"
+    # DATABASE_URI: str = f"postgresql+asyncpg://{POSTGRES_USER}:{quote_plus(POSTGRES_PASS)}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}"
+    
+    DATABASE_URI: str = f"postgresql+asyncpg://{NEON_DB_USER}:{quote_plus(NEON_DB_PASSWORD)}@ep-odd-wave-a1fkqowx-pooler.ap-southeast-1.aws.neon.tech/{Neon_DB_DATABASE}"
+    
+    # DATABASE_URL= postgres://user:password@your-neon-hostname.neon.tech/neondb?sslmode=require
+
 
     # Sync URI specifically for Celery synchronous tasks
-    SYNC_DATABASE_URI: str = f"postgresql://{POSTGRES_USER}:{quote_plus(POSTGRES_PASS)}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}"
+    # SYNC_DATABASE_URI: str = f"postgresql://{POSTGRES_USER}:{quote_plus(POSTGRES_PASS)}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}"
+    SYNC_DATABASE_URI: str = f"postgresql://{NEON_DB_USER}:{quote_plus(NEON_DB_PASSWORD)}@ep-odd-wave-a1fkqowx-pooler.ap-southeast-1.aws.neon.tech/{Neon_DB_DATABASE}?sslmode=require"
     
     #QDRANT Database Config
     QDRANT_API_KEY:str = os.environ.get('QDRANT_API_KEY',None)
@@ -107,13 +120,15 @@ class Settings(BaseSettings):
     FACE_EMBEDDING_GENERATOR_MODEL:str = os.environ.get('FACE_EMBEDDING_GENERATOR_MODEL',None)
     #Threshold values for face comparision
     FACE_COMPARE_THRESHOLD:float = os.environ.get('FACE_COMPARE_THRESHOLD',None)
+    # Face net weights
+    FACE_NET_MODEL_WEIGHTS:str = os.environ.get('FACE_NET_MODEL_WEIGHTS',None)
     #Threshold value for duplicate image detection
     BLUR_IMAGE_THRESHOLD:float = os.environ.get('BLUR_IMAGE_THRESHOLD',None)
 
     #CELERY VARIABLES
     CELERY_BROKER_URL:str = os.environ.get("CELERY_BROKER_URL",None)
     CELERY_RESULT_BACKEND_URL:str = f"db+{SYNC_DATABASE_URI}"
-    WORKER_CONCURRENCY :int = os.environ.get("WORKER_CONCURRENCY",1)
+    CELERY_WORKER_CONCURRENCY :int = os.environ.get("WORKER_CONCURRENCY",1)
     CELERY_WORKING_ENV_CONFIG:str = os.environ.get("CELERY_WORKING_ENV_CONFIG","development")
 
 

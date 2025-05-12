@@ -24,6 +24,7 @@ async def separate_blur_images(images_path:list, root_folder:str, inside_root_ma
     non_blur_images = []
     blurred_metadata = []
     total_img_len = len(images_path)
+    progress = 0.0
 
     for index, image_info in enumerate(images_path):
         image_path = image_info['local_path']  # Get path from dict

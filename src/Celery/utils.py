@@ -2,14 +2,16 @@ from celery import current_app as current_celery_app
 from celery.result import AsyncResult
 from fastapi import HTTPException, status
 from Celery.config import celery_get_settings
+from config.settings import get_settings
 
 
-settings = celery_get_settings()
+celery_settings = celery_get_settings()
+settings = get_settings()
 
 
 def create_celery():
     celery_app = current_celery_app
-    celery_app.config_from_object(settings, namespace='CELERY')
+    celery_app.config_from_object(celery_settings, namespace='CELERY')
     celery_app.conf.update(task_track_started=True)
     celery_app.conf.update(acks_late= True)
     celery_app.conf.update(task_serializer='pickle')
@@ -26,7 +28,7 @@ def create_celery():
     # celery_app.conf.update(redis_socket_keepalive=True)  # Keep the Redis connection alive
     # Worker-related settings
     celery_app.conf.update(worker_max_tasks_per_child=10) # will retart after 10 task so if any task won't let the resource free it will help in that case
-    celery_app.conf.update(worker_concurrency=4) # 4 task can run at same time
+    celery_app.conf.update(worker_concurrency=settings.CELERY_WORKER_CONCURRENCY) # 4 task can run at same time
     
     # Broker transport options for visibility timeout
     celery_app.conf.update(broker_transport_options={'visibility_timeout': 43200})  # Task timeout in seconds

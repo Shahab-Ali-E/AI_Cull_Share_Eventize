@@ -13,6 +13,7 @@ from schemas.ContactUs import ContactUsSchema
 from utils.MailSender import celery_send_mail
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy import func, select
+from utils.template_engine import templates
 
 
 router = APIRouter(
@@ -116,47 +117,10 @@ async def contact_us(
         # Send an email to the user using Celery
         subject = "Thank you for contacting us!"
         recipients = [contact_us.email]
-        body = f"""
-                <!DOCTYPE html>
-                <html>
-                <head>
-                    <meta charset="UTF-8">
-                    <title>Thank You for Contacting Us</title>
-                </head>
-                <body style="font-family: Arial, sans-serif; background-color: #f9f9f9; margin: 0; padding: 0;">
-                    <table align="center" width="100%" bgcolor="#ffffff" style="max-width: 600px; border-radius: 8px; box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1); margin-top: 20px; padding: 20px;">
-                        <tr>
-                            <td style="text-align: center;">
-                                <h1 style="color: #9333ea; margin-bottom: 10px;">Thank You, {contact_us.first_name} {contact_us.last_name}!</h1>
-                                <p style="color: #444; font-size: 16px;">We appreciate you reaching out to us.</p>
-                            </td>
-                        </tr>
-                        <tr>
-                            <td style="padding: 20px; text-align: center;">
-                                <p style="font-size: 16px; color: #333;">
-                                    Our team has received your message and we will contact you within <b style="color: #2dd4bf;">5 minutes</b>.
-                                </p>
-                                <p style="font-size: 16px; color: #555;">If you have any urgent concerns, feel free to reply to this email.</p>
-                            </td>
-                        </tr>
-                        <tr>
-                            <td style="text-align: center; padding: 20px;">
-                                <a href="{settings.FRONTEND_HOST}" style="background-color: #9333ea; color: #fff; text-decoration: none; padding: 10px 20px; border-radius: 5px; font-size: 16px; display: inline-block;">
-                                    Visit Our Website
-                                </a>
-                            </td>
-                        </tr>
-                        <tr>
-                            <td style="background-color: #f3f3f3; text-align: center; padding: 15px; font-size: 14px; color: #555;">
-                                <p>Best regards,</p>
-                                <p><b>AiCullShareEventize</b></p>
-                                <p><a href="mailto:support@AiCullShareEventize.com" style="color: #9333ea; text-decoration: none;">support@yourcompany.com</a></p>
-                            </td>
-                        </tr>
-                    </table>
-                </body>
-                </html>
-            """
+        body = templates.get_template("ContactUs.html").render(
+            user_name=f"{contact_us.first_name} {contact_us.last_name}",
+            user_message=contact_us.description
+        )
 
         celery_send_mail.apply_async(args=[recipients, subject, body])
 

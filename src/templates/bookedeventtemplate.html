@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Event Booked Successfully</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #000000;
+            margin: 0;
+            padding: 20px;
+        }
+        .email-container {
+            max-width: 600px;
+            margin: auto;
+            background: #1a1a1a;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        }
+        h2 {
+            color: #ffffff;
+        }
+        p {
+            color: #cccccc;
+            line-height: 1.6;
+        }
+        .highlight {
+            color: #007BFF;
+            font-weight: bold;
+        }
+        .footer {
+            margin-top: 20px;
+            font-size: 12px;
+            color: #777;
+            text-align: center;
+        }
+        .container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 10vh;
+            background-color: #1c1c1c;
+        }
+        .text {
+            font-size: 50px;
+            font-weight: bold;
+            color: white;
+        }
+        .contact-info {
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 1px solid #333;
+        }
+    </style>
+</head>
+<body>
+    <div class="email-container">
+        <div class="container">
+            <div class="text">AICSE</div>
+        </div>
+        <h2>Hello {{user_name}}!</h2>
+        <p>Your event booking <span class="highlight">(ID: {{ form_id }})</span> has been successfully submitted. 🎉</p>
+        <p>Our team has received your event details and will be in touch with you shortly to confirm the arrangements.</p>
+        
+        <div class="contact-info">
+            <p>Need immediate assistance?</p>
+            <p>Email us at <a href="mailto:aicullshareandeventize@gmail.com">aicullshareandeventize@gmail.com</a></p>
+        </div>
+
+        <p>Best Regards,<br>
+        <strong>AI Cull Share & Eventize Team</strong></p>
+        
+        <div class="footer">
+            <p>&copy; 2025 AI Cull Share & Eventize. All rights reserved.</p>
+        </div>
+    </div>
+</body>
+</html>

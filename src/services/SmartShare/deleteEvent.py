@@ -23,10 +23,10 @@ async def delete_event_s3_db(db_session:AsyncSession, s3_utils_obj, user_id:str,
             detail=f"Event with name '{event_name}' not found in database"
         )
     
-    if event_data.status.value == PublishStatus.PENDING.value or (event_data.uploading_in_progress and event_data.uploading_task_id):
+    if event_data.status.value == PublishStatus.PENDING.value:
         raise HTTPException(
             status_code=status.HTTP_423_LOCKED, 
-            detail='Unable to Delete event While Publishing or Uploading is In Progress'
+            detail='Unable to Delete event While Publishing'
         )
 
     # Attempt to delete the event from Database

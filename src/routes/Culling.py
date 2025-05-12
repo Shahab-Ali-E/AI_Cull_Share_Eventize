@@ -10,6 +10,7 @@ from sqlalchemy import asc, desc, func
 from sqlalchemy.future import select
 
 from config.settings import get_settings
+from config.syncDatabase import celery_sync_session
 from dependencies.core import DBSessionDep
 from dependencies.user import get_user
 from model.CullingFolders import CullingFolder
@@ -23,6 +24,8 @@ from services.Culling.deleteFolderFromS3 import delete_s3_folder_and_update_db
 from services.Culling.savePreCullImagesMetadata import save_pre_cull_images_metadata
 from services.Culling.tasks.cullingTask import culling_task
 from utils.S3Utils import S3Utils
+from sqlalchemy.orm import Session
+
 
 router = APIRouter(
     prefix='/culling',
@@ -469,7 +472,7 @@ async def start_culling(culling_data: ImageTaskData, db_session: DBSessionDep, u
     user_id = user.get('id')
     
     # async with db_session.begin():
-        # Get folder data
+    # Get folder data
     folder_data = (await db_session.scalars(
         select(CullingFolder).where(
             CullingFolder.id == culling_data.folder_id,
@@ -494,8 +497,8 @@ async def start_culling(culling_data: ImageTaskData, db_session: DBSessionDep, u
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Error sending task to Celery: {str(e)}")
 
-       
-        # db_session.add(folder_data)
+    # folder_data.culling_in_progress=True
+    # db_session.add(folder_data)
     
     return JSONResponse({"task_id": task.id})
 
@@ -544,5 +547,3 @@ async def delete_folder(dir_name:str, db_session: DBSessionDep, user:User = Depe
     except Exception as e:
         await db_session.rollback()
         return JSONResponse(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, content=str(e))
-
- 
