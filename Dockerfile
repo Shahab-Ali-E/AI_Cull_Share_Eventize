@@ -99,7 +99,7 @@ COPY . .
 COPY supervisord.conf /etc/supervisord.conf
 
 # Expose port
-EXPOSE 8080
+EXPOSE 7860
 
 # Use Supervisor to run both services
 CMD ["/usr/bin/supervisord", "-c", "/etc/supervisord.conf"]
