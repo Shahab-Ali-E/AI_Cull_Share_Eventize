@@ -19,7 +19,7 @@ pipeline {
                     withCredentials([file(credentialsId: 'Ai_Cull_Share_Eventize_Env_File', variable: 'ENV_FILE')]) {
                         sh '''
                             cp $ENV_FILE /tmp/ai_cull_env/.env
-                            docker-compose --env-file /tmp/ai_cull_env/.env up -d
+                            docker compose --env-file /tmp/ai_cull_env/.env up -d
                         '''
                     }
                 }
