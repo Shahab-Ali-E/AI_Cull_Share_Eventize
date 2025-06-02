@@ -267,8 +267,8 @@ from sklearn.metrics.pairwise import cosine_similarity
 from PIL import Image
 import numpy as np
 from tensorflow.keras.applications import ResNet50
-from config.settings import get_settings
-from dependencies.mlModelsManager import ModelManager
+from src.config.settings import get_settings
+from src.dependencies.mlModelsManager import ModelManager
 import os
 import time
 

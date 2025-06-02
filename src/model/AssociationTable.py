@@ -1,14 +1,14 @@
 from datetime import datetime
-from config.Database import Base
+from src.config.Database import Base
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy import UUID, ForeignKey, DateTime, func
 import uuid
-from typing import TYPE_CHECKING, List
+from typing import TYPE_CHECKING
 
 
 if TYPE_CHECKING:
-    from model.SmartShareFolders import SmartShareFolder
-    from model.User import User
+    from src.model.SmartShareFolders import SmartShareFolder
+    from src.model.User import User
 
 class SmartShareFoldersSecondaryUsersAssociation(Base):
     __tablename__ = "smart_share_folders_users_association"

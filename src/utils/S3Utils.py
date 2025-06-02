@@ -4,8 +4,7 @@ from botocore.exceptions import ClientError
 from fastapi import HTTPException,status
 from concurrent.futures import ThreadPoolExecutor
 import asyncio
-
-from utils.CustomExceptions import FolderAlreadyExistsException
+from src.utils.CustomExceptions import FolderAlreadyExistsException
 
 class S3Utils:
     """

@@ -175,16 +175,16 @@
 #         )
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from dependencies.user import get_user
-from dependencies.core import DBSessionDep
-from schemas.EventArrangment import (
+from src.dependencies.user import get_user
+from src.dependencies.core import DBSessionDep
+from src.schemas.EventArrangment import (
     BookEventFormSchema,
     GetEventResponse,
     GetMultipleEventsResponse,
 )
-from services.EventArrangment.getAllBookedEvents import get_all_booked_events_service
-from services.EventArrangment.getBookedEventById import get_booked_event_by_id_service
-from services.EventArrangment.BookEvent import book_event_service
+from src.services.EventArrangment.getAllBookedEvents import get_all_booked_events_service
+from src.services.EventArrangment.getBookedEventById import get_booked_event_by_id_service
+from src.services.EventArrangment.BookEvent import book_event_service
 
 router = APIRouter(prefix='/event_arrangment', tags=['Event Arrangment'])
 

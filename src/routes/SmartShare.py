@@ -10,25 +10,25 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import asc, desc, func
 from sqlalchemy.future import select
 
-from config.settings import get_settings
-from dependencies.core import DBSessionDep
-from dependencies.user import get_user
-from model.SmartShareFolders import PublishStatus, SmartShareFolder
-from model.SmartShareImagesMetaData import SmartShareImagesMetaData
-from model.User import User
-from schemas.FolderMetaDataResponse import  EventsResponse
-from schemas.ImageMetaDataResponse import SmartShareEventImagesMeta, SmartShareImageResponse
-from schemas.ImageTaskData import ImageTaskData
-from services.SmartShare.createEvent import create_event_in_S3_and_DB
-from services.SmartShare.deleteEvent import delete_event_s3_db
-from services.SmartShare.saveEventImageMeta import save_event_images_metadata
-from services.SmartShare.secondary_user_service import associate_user_with_folder
-from services.SmartShare.similaritySearch import get_similar_images
-from services.SmartShare.tasks.imageShareTask import download_and_process_images
-from services.SmartShare.updateEvent import update_event_details
-from services.SmartShare.uploadSmartShareImages import upload_smart_share_event_images
-from utils.QdrantUtils import QdrantUtils
-from utils.S3Utils import S3Utils
+from src.config.settings import get_settings
+from src.dependencies.core import DBSessionDep
+from src.dependencies.user import get_user
+from src.model.SmartShareFolders import PublishStatus, SmartShareFolder
+from src.model.SmartShareImagesMetaData import SmartShareImagesMetaData
+from src.model.User import User
+from src.schemas.FolderMetaDataResponse import  EventsResponse
+from src.schemas.ImageMetaDataResponse import SmartShareEventImagesMeta, SmartShareImageResponse
+from src.schemas.ImageTaskData import ImageTaskData
+from src.services.SmartShare.createEvent import create_event_in_S3_and_DB
+from src.services.SmartShare.deleteEvent import delete_event_s3_db
+from src.services.SmartShare.saveEventImageMeta import save_event_images_metadata
+from src.services.SmartShare.secondary_user_service import associate_user_with_folder
+from src.services.SmartShare.similaritySearch import get_similar_images
+from src.services.SmartShare.tasks.imageShareTask import download_and_process_images
+from src.services.SmartShare.updateEvent import update_event_details
+from src.services.SmartShare.uploadSmartShareImages import upload_smart_share_event_images
+from src.utils.QdrantUtils import QdrantUtils
+from src.utils.S3Utils import S3Utils
 
 router = APIRouter(
     prefix='/smart_share',
@@ -612,7 +612,7 @@ async def get_images(event_id: UUID, db_session: DBSessionDep, image: UploadFile
         image_map_path = os.path.join(event_folder_path, f'{folder_data.name}.pkl')
 
         # Perform face search
-        matches_arr = await get_similar_images(query_image=image, image_map_picklefilepath=image_map_path, index_fias_filepath=faiss_index_path)
+        matches_arr = await get_similar_images(query_image=image, image_map_picklefilepath=image_map_path, index_fias_filepath=faiss_index_path, threshold=0.82)
         
         found_images = []
         

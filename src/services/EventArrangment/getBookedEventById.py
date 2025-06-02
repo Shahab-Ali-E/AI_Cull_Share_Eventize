@@ -3,7 +3,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.future import select
 from fastapi import HTTPException, status
 from fastapi.responses import JSONResponse
-from model.EventArrangmentForm import EventArrangmentForm
+from src.model.EventArrangmentForm import EventArrangmentForm
 
 async def get_booked_event_by_id_service(
     db_session,

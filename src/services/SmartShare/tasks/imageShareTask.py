@@ -7,18 +7,17 @@ from sqlalchemy.exc import SQLAlchemyError
 import numpy as np
 import requests
 from tqdm import tqdm
-from config.settings import get_settings
-from Celery.utils import create_celery
-
-from config.syncDatabase import celery_sync_session
-from dependencies.mlModelsManager import ModelManager
-from model.SmartShareFolders import PublishStatus, SmartShareFolder
-from utils.CustomExceptions import SignatureDoesNotMatch, URLExpiredException, UnauthorizedAccess
-from utils.MailSender import celery_send_mail
+from src.config.settings import get_settings
+from src.Celery.utils import create_celery
+from src.config.syncDatabase import celery_sync_session
+from src.dependencies.mlModelsManager import ModelManager
+from src.model.SmartShareFolders import PublishStatus, SmartShareFolder
+from src.utils.CustomExceptions import SignatureDoesNotMatch, URLExpiredException, UnauthorizedAccess
+from src.utils.MailSender import celery_send_mail
 from PIL import Image
 from sqlalchemy import select
-from utils.template_engine import templates
-from utils.generateQRCode import generate_qr_code
+from src.utils.template_engine import templates
+from src.utils.generateQRCode import generate_qr_code
 
 #---instances---
 settings = get_settings()

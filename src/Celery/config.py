@@ -1,6 +1,6 @@
 from functools import lru_cache
 from kombu import Queue
-from config.settings import get_settings
+from src.config.settings import get_settings
 
 settings = get_settings()
 

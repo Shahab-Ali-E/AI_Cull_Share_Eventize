@@ -2,11 +2,10 @@ import os
 import shutil
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from config.settings import get_settings
+from src.config.settings import get_settings
 from fastapi import HTTPException, status
-
-from model.SmartShareFolders import PublishStatus, SmartShareFolder
-from utils.UpdateUserStorage import update_user_storage_in_db
+from src.model.SmartShareFolders import PublishStatus, SmartShareFolder
+from src.utils.UpdateUserStorage import update_user_storage_in_db
 
 settings = get_settings()
 

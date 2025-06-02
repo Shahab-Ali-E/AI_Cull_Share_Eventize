@@ -1,9 +1,10 @@
 from io import BytesIO
+from fastapi import HTTPException, status
 import pickle
 import tempfile
 import faiss
 import numpy as np
-from services.SmartShare.tasks.imageShareTask import get_face_embedding
+from src.services.SmartShare.tasks.imageShareTask import get_face_embedding
 from PIL import Image
 
 async def get_similar_images(query_image, index_fias_filepath: str, image_map_picklefilepath: str, threshold=0.6):
@@ -26,10 +27,16 @@ async def get_similar_images(query_image, index_fias_filepath: str, image_map_pi
         image_map = pickle.load(f)
     query_embedding = get_face_embedding(temp_file_path)
     if query_embedding is None:
-        return []
+        raise HTTPException(status_code=status, detail="No face detected in the image.")
 
     query_embedding = np.array(query_embedding[0])  # Use the first detected face
     D, I = index.search(query_embedding, len(image_map))
 
-    matched_images = [image_map[i] for i, d in zip(I[0], D[0]) if d < threshold]
-    return matched_images
+    # matched_images = [image_map[i] for i, d in zip(I[0], D[0]) if d < threshold]
+    # return matched_images
+    
+    # Collect matches below threshold
+    matches = [image_map[i] for i, dist in zip(I[0], D[0]) if dist < threshold]
+    # Remove duplicates while preserving order
+    unique_matches = list(dict.fromkeys(matches))
+    return unique_matches

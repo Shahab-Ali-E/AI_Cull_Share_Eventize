@@ -1,19 +1,19 @@
 import asyncio
 import os
 import time
-from model.CullingImagesMetaData import ImagesMetaData, TemporaryImageURL
-from services.Culling.separateBlurImages import separate_blur_images
-from config.settings import get_settings
-from services.Culling.separateClosedEye import ClosedEyeDetection
-from config.syncDatabase import celery_sync_session
-from services.Culling.separateDuplicateImages import separate_duplicate_images
-from utils.UpsertMetaDataToDB import insert_image_metadata
-from utils.CustomExceptions import SignatureDoesNotMatch, URLExpiredException, UnauthorizedAccess
-from utils.S3Utils import S3Utils
-from Celery.utils import create_celery
+from src.model.CullingImagesMetaData import ImagesMetaData, TemporaryImageURL
+from src.services.Culling.separateBlurImages import separate_blur_images
+from src.config.settings import get_settings
+from src.services.Culling.separateClosedEye import ClosedEyeDetection
+from src.config.syncDatabase import celery_sync_session
+from src.services.Culling.separateDuplicateImages import separate_duplicate_images
+from src.utils.UpsertMetaDataToDB import insert_image_metadata
+from src.utils.CustomExceptions import SignatureDoesNotMatch, URLExpiredException
+from src.utils.S3Utils import S3Utils
+from src.Celery.utils import create_celery
 import requests
 from sqlalchemy import delete, select
-from model.CullingFolders import CullingFolder
+from src.model.CullingFolders import CullingFolder
 from celery import chain
 from sqlalchemy.orm.attributes import flag_modified
 

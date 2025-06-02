@@ -5,15 +5,14 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.future import select
 from typing import List
 from sqlalchemy.ext.asyncio import AsyncSession
-from config.security import validate_images_and_storage
-from config.settings import get_settings
-from model.SmartShareFolders import SmartShareFolder
-from model.User import User
-from services.SmartShare.tasks.smartShareImagesUploadingTask import upload_event_images_and_insert_metadata
-from utils.UpdateUserStorage import update_user_storage_in_db
+from src.config.security import validate_images_and_storage
+from src.config.settings import get_settings
+from src.model.SmartShareFolders import SmartShareFolder
+from src.model.User import User
+from src.services.SmartShare.tasks.smartShareImagesUploadingTask import upload_event_images_and_insert_metadata
+from src.utils.UpdateUserStorage import update_user_storage_in_db
 
 settings = get_settings()
-
 
 async def upload_smart_share_event_images(
     event_id: int,

@@ -1,19 +1,19 @@
 from fastapi import APIRouter, HTTPException,status,Depends
 from fastapi.responses import JSONResponse
-from config.settings import get_settings
-from dependencies.user import get_user
-from dependencies.core import DBSessionDep
-from model.AssociationTable import SmartShareFoldersSecondaryUsersAssociation
-from model.EventArrangmentForm import EventArrangmentForm
-from model.ContactUs import ContactUs
-from model.CullingFolders import CullingFolder
-from model.SmartShareFolders import SmartShareFolder
-from model.User import User
-from schemas.ContactUs import ContactUsSchema
-from utils.MailSender import celery_send_mail
+from src.config.settings import get_settings
+from src.dependencies.user import get_user
+from src.dependencies.core import DBSessionDep
+from src.model.AssociationTable import SmartShareFoldersSecondaryUsersAssociation
+from src.model.EventArrangmentForm import EventArrangmentForm
+from src.model.ContactUs import ContactUs
+from src.model.CullingFolders import CullingFolder
+from src.model.SmartShareFolders import SmartShareFolder
+from src.model.User import User
+from src.schemas.ContactUs import ContactUsSchema
+from src.utils.MailSender import celery_send_mail
+from src.utils.template_engine import templates
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy import func, select
-from utils.template_engine import templates
 
 
 router = APIRouter(

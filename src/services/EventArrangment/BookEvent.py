@@ -3,10 +3,10 @@ from fastapi.responses import JSONResponse
 from jinja2 import TemplateNotFound
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession 
-from model.EventArrangmentForm import EventArrangmentForm
-from schemas.EventArrangment import BookEventFormSchema
-from utils.MailSender import celery_send_mail
-from utils.template_engine import templates
+from src.model.EventArrangmentForm import EventArrangmentForm
+from src.schemas.EventArrangment import BookEventFormSchema
+from src.utils.MailSender import celery_send_mail
+from src.utils.template_engine import templates
 
 
 async def book_event_service(

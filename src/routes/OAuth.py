@@ -1,10 +1,10 @@
 from fastapi import APIRouter, HTTPException, Request, status, Depends
-from config.settings import get_settings
-from dependencies.core import DBSessionDep
-from dependencies.user import get_user
+from src.config.settings import get_settings
+from src.dependencies.core import DBSessionDep
+from src.dependencies.user import get_user
 import logging
-from services.Auth.user_clerk_auth import delete_user_record, sign_up_user, update_user_record
-from utils.S3Utils import S3Utils
+from src.services.Auth.user_clerk_auth import delete_user_record, sign_up_user, update_user_record
+from src.utils.S3Utils import S3Utils
 
 # Initialize logging
 logging.basicConfig(level=logging.INFO)

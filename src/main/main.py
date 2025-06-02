@@ -37,12 +37,12 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.responses import RedirectResponse
-from config.settings import get_settings
-from routes import OAuth, Culling, SmartShare, Task, Dashboard, EventArrangment
-from config.Database import sessionmanager
-from Celery.utils import create_celery
+from src.config.settings import get_settings
+from src.routes import OAuth, Culling, SmartShare, Task, Dashboard, EventArrangment
+from src.config.Database import sessionmanager
+from src.Celery.utils import create_celery
 from contextlib import asynccontextmanager 
-from dependencies.mlModelsManager import ModelManager
+from src.dependencies.mlModelsManager import ModelManager
 from starlette.middleware.cors import CORSMiddleware 
 from starlette.middleware import Middleware
 from fastapi.staticfiles import StaticFiles

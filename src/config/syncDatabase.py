@@ -1,9 +1,8 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from contextlib import contextmanager
-from config.settings import get_settings
+from src.config.settings import get_settings
 from typing import Iterator
-from ssl import create_default_context 
 
 settings = get_settings()
 # Create a default SSL context or pass True/"require" per your needs

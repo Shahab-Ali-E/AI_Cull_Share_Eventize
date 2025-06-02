@@ -1,50 +1,33 @@
-name: AI_CULL_SHARE_EVENTIZE
+name: ai_cull_share_eventize
 
 services:
   backend:
     build: .
+    container_name: backend
     env_file:
-      - ./.env
+      - .env
+    environment:
+      - TRANSFORMERS_CACHE=/app/.cache
     ports:
       - 8000:8000
     volumes:
       - ./static:/app/static
-    depends_on:
-      - database_dev
-      - rabbit_MQ_dev
-
-  database_dev:
-    image: postgres:16.4
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
-    ports:
-      - 5432:5432
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - huggingface_cache:/app/.cache/huggingface
 
   celery_dev:
-    container_name: celery_worker
     build: .
+    container_name: celery_worker
     command: celery -A src.main.main.celery worker --loglevel=info --pool=solo
+    env_file:
+      - .env
+    environment:
+      - TRANSFORMERS_CACHE=/app/.cache
+      - C_FORCE_ROOT=true
     volumes:
       - ./static:/app/static
-    env_file:
-      - ./.env
-
+      - huggingface_cache:/app/.cache/huggingface
     depends_on:
-      - database_dev
-      - rabbit_MQ_dev
-
-  rabbit_MQ_dev:
-    image: rabbitmq:3-management
-    ports:
-      - 15672:15672
-      - 5672:5672
-    volumes:
-      - rabbitmq_data:/var/lib/rabbitmq
+      - backend
 
 volumes:
-  postgres_data:
-  rabbitmq_data:
+  huggingface_cache:

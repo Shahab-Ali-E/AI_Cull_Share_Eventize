@@ -1,15 +1,15 @@
 from datetime import datetime
 from sqlalchemy import ForeignKey, DateTime, func, UUID, String, Enum as SqlEnum
 from sqlalchemy.orm import relationship, Mapped, mapped_column
-from config.Database import Base
+from src.config.Database import Base
 from typing import List, TYPE_CHECKING
 import uuid
 from enum import Enum
 
 if TYPE_CHECKING:
-    from model.User import User
-    from model.SmartShareImagesMetaData import SmartShareImagesMetaData
-    from model.AssociationTable import SmartShareFoldersSecondaryUsersAssociation
+    from src.model.User import User
+    from src.model.SmartShareImagesMetaData import SmartShareImagesMetaData
+    from src.model.AssociationTable import SmartShareFoldersSecondaryUsersAssociation
 
 class PublishStatus(Enum):
     PUBLISHED = "Published"

@@ -1,6 +1,6 @@
 from fastapi import HTTPException, status
-from model.User import User
-from config.settings import get_settings
+from src.model.User import User
+from src.config.settings import get_settings
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.exc import SQLAlchemyError

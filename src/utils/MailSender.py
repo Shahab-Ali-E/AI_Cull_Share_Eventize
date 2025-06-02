@@ -1,6 +1,6 @@
 from fastapi_mail import FastMail, MessageSchema, ConnectionConfig, MessageType
-from Celery.utils import create_celery
-from config.settings import get_settings
+from src.Celery.utils import create_celery
+from src.config.settings import get_settings
 from asgiref.sync import async_to_sync
 
 settings = get_settings()

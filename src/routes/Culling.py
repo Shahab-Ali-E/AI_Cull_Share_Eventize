@@ -1,30 +1,27 @@
 from datetime import datetime, timezone
 import os
 from typing import List, Optional
-from uuid import UUID, uuid4
+from uuid import UUID
 
-from fastapi import (APIRouter, Depends, File, HTTPException, Query, Request,
-                     UploadFile, status)
+from fastapi import (APIRouter, Depends, HTTPException, Query, Request, status)
 from fastapi.responses import JSONResponse
 from sqlalchemy import asc, desc, func
 from sqlalchemy.future import select
 
-from config.settings import get_settings
-from config.syncDatabase import celery_sync_session
-from dependencies.core import DBSessionDep
-from dependencies.user import get_user
-from model.CullingFolders import CullingFolder
-from model.CullingImagesMetaData import ImagesMetaData, TemporaryImageURL
-from model.User import User
-from schemas.FolderMetaDataResponse import CullingFolderMetaDataById, GetAllCullingFoldersResponse, TemporaryImageURLResponse
-from schemas.ImageMetaDataResponse import ImagesMetadata, temporaryImagesMetadata
-from schemas.ImageTaskData import ImageTaskData
-from services.Culling.createFolderInS3 import create_folder_in_S3
-from services.Culling.deleteFolderFromS3 import delete_s3_folder_and_update_db
-from services.Culling.savePreCullImagesMetadata import save_pre_cull_images_metadata
-from services.Culling.tasks.cullingTask import culling_task
-from utils.S3Utils import S3Utils
-from sqlalchemy.orm import Session
+from src.config.settings import get_settings
+from src.dependencies.core import DBSessionDep
+from src.dependencies.user import get_user
+from src.model.CullingFolders import CullingFolder
+from src.model.CullingImagesMetaData import ImagesMetaData, TemporaryImageURL
+from src.model.User import User
+from src.schemas.FolderMetaDataResponse import CullingFolderMetaDataById, GetAllCullingFoldersResponse, TemporaryImageURLResponse
+from src.schemas.ImageMetaDataResponse import ImagesMetadata, temporaryImagesMetadata
+from src.schemas.ImageTaskData import ImageTaskData
+from src.services.Culling.createFolderInS3 import create_folder_in_S3
+from src.services.Culling.deleteFolderFromS3 import delete_s3_folder_and_update_db
+from src.services.Culling.savePreCullImagesMetadata import save_pre_cull_images_metadata
+from src.services.Culling.tasks.cullingTask import culling_task
+from src.utils.S3Utils import S3Utils
 
 
 router = APIRouter(
@@ -304,7 +301,7 @@ async def download_folder(folder_id:UUID, request:Request, db_session: DBSession
 
 
 @router.post('/create_directory/{dir_name}', status_code=status.HTTP_201_CREATED)
-async def create_directory(dir_name:str, request:Request,  db_session: DBSessionDep, user:User = Depends(get_user)):
+async def create_directory(dir_name:str,  db_session: DBSessionDep, user:User = Depends(get_user)):
     """
     🗂️ **Create a Root Directory in S3 for Image Organization** 🗂️
 

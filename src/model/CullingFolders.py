@@ -1,15 +1,15 @@
 from datetime import datetime
-from sqlalchemy import ForeignKey, DateTime, func, UUID, String
+from sqlalchemy import ForeignKey, DateTime, func, UUID
 from sqlalchemy.orm import relationship, Mapped, mapped_column
-from config.Database import Base
+from src.config.Database import Base
 from typing import List, TYPE_CHECKING
 import uuid
 from sqlalchemy import JSON
 
 
 if TYPE_CHECKING:
-    from model.User import User
-    from model.CullingImagesMetaData import ImagesMetaData,TemporaryImageURL
+    from src.model.User import User
+    from src.model.CullingImagesMetaData import ImagesMetaData,TemporaryImageURL
 
 #It trackes all tables created By user in culling module
 class CullingFolder(Base):

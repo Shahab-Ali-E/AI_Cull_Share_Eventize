@@ -1,8 +1,5 @@
-from pydantic import BaseModel, field_validator, HttpUrl, ValidationError
+from pydantic import BaseModel
 from typing import List
-from urllib.parse import urlparse, parse_qs
-from datetime import timedelta, datetime, timezone
-from fastapi import HTTPException
 from uuid import UUID
 
 class ImageTaskData(BaseModel):

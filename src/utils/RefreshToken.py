@@ -1,5 +1,5 @@
 import httpx
-from config.settings import get_settings
+from src.config.settings import get_settings
 
 settings = get_settings()
 

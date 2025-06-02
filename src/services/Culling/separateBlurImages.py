@@ -5,8 +5,8 @@ from PIL import Image
 import io
 import torch
 from uuid import uuid4
-from config.settings import get_settings
-from dependencies.mlModelsManager import ModelManager
+from src.config.settings import get_settings
+from src.dependencies.mlModelsManager import ModelManager
 
 settings = get_settings()
 

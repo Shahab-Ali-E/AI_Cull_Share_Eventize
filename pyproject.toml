@@ -34,7 +34,6 @@ sentence-transformers = "^3.0.1"
 asyncpg = "^0.29.0"
 pytest-mock = "^3.14.0"
 tf-keras = "^2.17.0"
-psycopg2 = "^2.9.10"
 clerk-backend-api = "^1.4.0"
 python-jose = {extras = ["cryptography"], version = "^3.3.0"}
 fastapi-mail = "^1.4.2"
@@ -43,6 +42,8 @@ facenet-pytorch = "2.5.3"
 faiss-cpu = "^1.10.0"
 qrcode = {extras = ["pil"], version = "^8.0"}
 psycopg2-binary = "^2.9.10"
+opencv-python-headless = "^4.11.0.86"
+psycopg2 = "^2.9.10"
 
 [build-system]
 requires = ["poetry-core"]

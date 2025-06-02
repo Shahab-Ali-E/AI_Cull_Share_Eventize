@@ -1,13 +1,13 @@
 import uuid
 from sqlalchemy import ForeignKey, DateTime, func, UUID
 from sqlalchemy.orm import relationship
-from config.Database import Base
+from src.config.Database import Base
 from sqlalchemy.orm import Mapped, mapped_column
 from typing import TYPE_CHECKING
 from datetime import datetime
 
 if TYPE_CHECKING:
-    from model.CullingFolders import CullingFolder
+    from src.model.CullingFolders import CullingFolder
 
 class ImagesMetaData(Base):
     __tablename__ = "culling_images_metadata"
