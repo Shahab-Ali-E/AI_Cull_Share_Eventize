@@ -152,12 +152,6 @@ RUN poetry install --no-root --only main
 # Copy the rest of the app code
 COPY . .
 
-# Set environment variable for Hugging Face cache
-# ENV HF_HOME=/app/.cache/huggingface
-
-# # Create the cache directory
-# RUN mkdir -p $HF_HOME
-
 # Expose app port
 EXPOSE 8000
 
