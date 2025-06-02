@@ -4,8 +4,8 @@ from io import BytesIO
 from uuid import uuid4
 from fastapi import HTTPException,status
 from sqlalchemy.ext.asyncio import AsyncSession
-from config.settings import get_settings
-from model.SmartShareImagesMetaData import SmartShareImagesMetaData
+from src.config.settings import get_settings
+from src.model.SmartShareImagesMetaData import SmartShareImagesMetaData
 
 settings = get_settings()
 

@@ -1,13 +1,13 @@
 from sqlalchemy import Float, ForeignKey, DateTime, Integer, Text, func,String, UUID
 from sqlalchemy.orm import relationship
-from config.Database import Base
+from src.config.Database import Base
 from sqlalchemy.orm import Mapped, mapped_column
 from typing import TYPE_CHECKING, Optional
 from datetime import datetime
 import uuid
 
 if TYPE_CHECKING:
-    from model.User import User
+    from src.model.User import User
 
 class EventArrangmentForm(Base):
     __tablename__ = "event_arrangment_form"

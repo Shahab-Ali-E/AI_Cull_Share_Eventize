@@ -2,8 +2,8 @@ from io import BytesIO
 from typing import List
 from fastapi import UploadFile, HTTPException
 from PIL import Image
-from config.settings import get_settings
-from schemas.ImageMetaDataResponse import ImagesMetadata, temporaryImagesMetadata
+from src.config.settings import get_settings
+from src.schemas.ImageMetaDataResponse import temporaryImagesMetadata
 
 settings = get_settings()
 

@@ -11,7 +11,7 @@ load_dotenv(dotenv_path=env_path)
 
 
 class Settings(BaseSettings):
-
+    HF_HOME: str = os.environ.get("HF_HOME", "/app/.cache/huggingface")
     # App
     APP_NAME:  str = os.environ.get("APP_NAME", "")
     APP_HOSTED_URL:  str = os.environ.get("APP_HOSTED_URL", "")

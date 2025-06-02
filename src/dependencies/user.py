@@ -105,9 +105,9 @@ from jose.exceptions import JWTError
 from fastapi import HTTPException, status, Depends
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.future import select
-from config.settings import get_settings
-from dependencies.core import DBSessionDep
-from model.User import User
+from src.config.settings import get_settings
+from src.dependencies.core import DBSessionDep
+from src.model.User import User
 from sqlalchemy.exc import NoResultFound
 import requests
 

@@ -2,16 +2,15 @@ from datetime import datetime, timedelta
 from io import BytesIO
 import os
 import shutil
-from uuid import uuid4
-from config.settings import get_settings
-from Celery.utils import create_celery
+from src.config.settings import get_settings
+from src.Celery.utils import create_celery
 import asyncio
-from config.syncDatabase import celery_sync_session
-from model.SmartShareFolders import SmartShareFolder
-from model.SmartShareImagesMetaData import SmartShareImagesMetaData
-from utils.S3Utils import S3Utils
-from utils.UpdateUserStorage import sync_update_user_storage_in_db
-from utils.UpsertMetaDataToDB import insert_image_metadata, sync_upsert_folder_metadata_DB
+from src.config.syncDatabase import celery_sync_session
+from src.model.SmartShareFolders import SmartShareFolder
+from src.model.SmartShareImagesMetaData import SmartShareImagesMetaData
+from src.utils.S3Utils import S3Utils
+from src.utils.UpdateUserStorage import sync_update_user_storage_in_db
+from src.utils.UpsertMetaDataToDB import insert_image_metadata, sync_upsert_folder_metadata_DB
 from tqdm import tqdm
 
 #-----instances----

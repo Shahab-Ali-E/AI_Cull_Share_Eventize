@@ -3,7 +3,7 @@ from fastapi import UploadFile
 from datetime import datetime
 from typing import List, Optional
 
-from schemas.ImageMetaDataResponse import temporaryImagesMetadata
+from src.schemas.ImageMetaDataResponse import temporaryImagesMetadata
 
 class CullingFolderMetaData(BaseModel):
     id: UUID4

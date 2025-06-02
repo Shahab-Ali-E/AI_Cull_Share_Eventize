@@ -3,9 +3,9 @@ from sqlalchemy.future import select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from model.AssociationTable import SmartShareFoldersSecondaryUsersAssociation
+from src.model.AssociationTable import SmartShareFoldersSecondaryUsersAssociation
+from src.model.User import User
 from uuid import UUID
-from model.User import User
 
 async def associate_user_with_folder(user_id: UUID, event_id:UUID, db_session: AsyncSession):
     """

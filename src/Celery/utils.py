@@ -1,8 +1,8 @@
 from celery import current_app as current_celery_app
 from celery.result import AsyncResult
 from fastapi import HTTPException, status
-from Celery.config import celery_get_settings
-from config.settings import get_settings
+from src.Celery.config import celery_get_settings
+from src.config.settings import get_settings
 
 
 celery_settings = celery_get_settings()
@@ -16,7 +16,7 @@ def create_celery():
     celery_app.conf.update(acks_late= True)
     celery_app.conf.update(task_serializer='pickle')
     celery_app.conf.update(result_serializer='pickle')
-    celery_app.conf.update(accept_content=['pickle', 'json'])
+    celery_app.conf.update(accept_content=['json','pickle'])
     celery_app.conf.update(result_expires=200)
 
     # timeout and heartbeat settings
@@ -44,6 +44,7 @@ def create_celery():
     celery_app.conf.update(worker_send_task_events=False)
     celery_app.conf.update(broker_connection_retry_on_startup=True)
     celery_app.conf.update(imports=['src.services.SmartShare.tasks','src.services.Culling.tasks'])
+    # celery_app.conf.update(imports=['src.Celery.tasks'])
 
     return celery_app
 

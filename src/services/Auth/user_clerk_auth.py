@@ -1,10 +1,8 @@
 from fastapi import HTTPException, status, Request
 from sqlalchemy import select
-from model.User import User
+from src.model.User import User
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime
-from sqlalchemy.exc import NoResultFound
-from utils.S3Utils import S3Utils
 
 
 #  sign up user

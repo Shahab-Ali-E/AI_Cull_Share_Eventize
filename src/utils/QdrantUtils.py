@@ -1,6 +1,6 @@
 from qdrant_client import QdrantClient, models
-from config.settings import get_settings
-from qdrant_client.models import VectorParams, Distance
+from src.config.settings import get_settings
+from qdrant_client.models import  Distance
 from uuid import uuid4
 from fastapi import HTTPException,status
 

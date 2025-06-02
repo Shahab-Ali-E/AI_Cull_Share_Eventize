@@ -7,10 +7,11 @@ import cv2
 import numpy as np
 from PIL import Image
 import torch
-from config.settings import get_settings
-from dependencies.mlModelsManager import ModelManager
+from src.config.settings import get_settings
+from src.dependencies.mlModelsManager import ModelManager
 import asyncio
 import logging
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 

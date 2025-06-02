@@ -1,4 +1,4 @@
-from config.Database import Base
+from src.config.Database import Base
 from sqlalchemy import DateTime, func
 from sqlalchemy.orm import relationship
 from sqlalchemy.orm import mapped_column, Mapped
@@ -7,10 +7,10 @@ from datetime import datetime
 from sqlalchemy import JSON
 
 if TYPE_CHECKING:
-    from model.CullingFolders import CullingFolder
-    from model.SmartShareFolders import SmartShareFolder
-    from model.EventArrangmentForm import EventArrangmentForm
-    from model.AssociationTable import SmartShareFoldersSecondaryUsersAssociation
+    from src.model.CullingFolders import CullingFolder
+    from src.model.SmartShareFolders import SmartShareFolder
+    from src.model.EventArrangmentForm import EventArrangmentForm
+    from src.model.AssociationTable import SmartShareFoldersSecondaryUsersAssociation
 
 
 class User(Base):

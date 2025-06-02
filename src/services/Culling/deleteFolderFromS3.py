@@ -1,11 +1,8 @@
-import os
-import shutil
-import time
 from fastapi import HTTPException, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from model.CullingFolders import CullingFolder
-from utils.UpdateUserStorage import update_user_storage_in_db
+from src.model.CullingFolders import CullingFolder
+from src.utils.UpdateUserStorage import update_user_storage_in_db
 from sqlalchemy.future import select
 
 

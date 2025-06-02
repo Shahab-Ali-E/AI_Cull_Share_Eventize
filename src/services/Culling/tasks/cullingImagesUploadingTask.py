@@ -2,18 +2,16 @@ from datetime import datetime, timedelta, timezone
 from io import BytesIO
 import os
 import shutil
-from config.settings import get_settings
-from Celery.utils import create_celery
+from src.config.settings import get_settings
+from src.Celery.utils import create_celery
 import asyncio
-
-from config.syncDatabase import celery_sync_session
-from model.CullingFolders import CullingFolder
-from model.CullingImagesMetaData import TemporaryImageURL
-from utils.S3Utils import S3Utils
+from src.config.syncDatabase import celery_sync_session
+from src.model.CullingFolders import CullingFolder
+from src.model.CullingImagesMetaData import TemporaryImageURL
+from src.utils.S3Utils import S3Utils
 from tqdm import tqdm
-
-from utils.UpdateUserStorage import sync_update_user_storage_in_db
-from utils.UpsertMetaDataToDB import insert_image_metadata, sync_upsert_folder_metadata_DB
+from src.utils.UpdateUserStorage import sync_update_user_storage_in_db
+from src.utils.UpsertMetaDataToDB import insert_image_metadata, sync_upsert_folder_metadata_DB
 
 
 #-----instances----

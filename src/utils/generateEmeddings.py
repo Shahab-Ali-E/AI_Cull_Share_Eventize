@@ -1,6 +1,6 @@
 import torch
-from config.settings import get_settings
-from dependencies.mlModelsManager import ModelManager
+from src.config.settings import get_settings
+from src.dependencies.mlModelsManager import ModelManager
 
 settings = get_settings()
 models = ModelManager.get_models(settings)

@@ -3,9 +3,9 @@ from datetime import datetime, timedelta, timezone
 from io import BytesIO
 from fastapi import UploadFile, HTTPException,status
 from uuid import uuid4
-from config.settings import get_settings
+from src.config.settings import get_settings
+from src.model.CullingImagesMetaData import TemporaryImageURL
 from sqlalchemy.ext.asyncio import AsyncSession
-from model.CullingImagesMetaData import TemporaryImageURL
 
 settings = get_settings()
 

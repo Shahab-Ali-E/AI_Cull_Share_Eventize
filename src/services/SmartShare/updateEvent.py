@@ -1,8 +1,8 @@
 from fastapi import HTTPException, status, UploadFile, File
 import os
 import uuid
-from model.SmartShareFolders import SmartShareFolder
-from utils.UpsertMetaDataToDB import upsert_folder_metadata_DB
+from src.model.SmartShareFolders import SmartShareFolder
+from src.utils.UpsertMetaDataToDB import upsert_folder_metadata_DB
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
