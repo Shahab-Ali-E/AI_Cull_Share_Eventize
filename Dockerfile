@@ -123,6 +123,7 @@ ENV PYTHONUNBUFFERED=1 \
 RUN apt-get update && apt-get install --no-install-recommends -y \
     curl \
     build-essential \
+    libhdf5-dev \
     gcc \
     python3-dev \
     && rm -rf /var/lib/apt/lists/*
