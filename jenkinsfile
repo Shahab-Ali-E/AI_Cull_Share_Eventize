@@ -4,13 +4,27 @@ pipeline {
         COMPOSE_PROJECT_NAME = 'ai_cull_share_eventize'
     }
     stages {
+        stage('Downing the container') {
+            steps {
+                script {
+                    sh 'docker compose down'
+                }
+            }
+        }
+        stage('Remove Docker Images') {
+            steps {
+                script {
+                    // Remove all images associated with the project
+                    sh 'docker images -a | grep ai_cull_share_eventize | awk \'{print $3}\' | xargs --no-run-if-empty docker rmi'
+                }
+            }
+        }
         stage('Deploy with Docker Compose') {
             steps {
                 script {
-                    // Use the secret file and pass it to Docker Compose
                     withCredentials([file(credentialsId: 'Ai_Cull_Share_Eventize_Env_File', variable: 'SECRET_FILE')]) {
                         sh '''
-                            docker compose up -d --env SECRET_FILE
+                            docker compose --env-file "$SECRET_FILE" up -d
                         '''
                     }
                 }
