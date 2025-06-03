@@ -7,7 +7,7 @@ readme = "README.md"
 packages = [{include = "main", from = "src"}]
 
 [tool.poetry.dependencies]
-python = ">=3.12,<3.13"
+python = "3.11"
 fastapi = {extras = ["all"], version = "^0.111.1"}
 alembic = "1.13.2"
 pytest = "8.2.2"
