@@ -11,12 +11,20 @@ pipeline {
                 }
             }
         }
+        stage('Remove Docker Images') {
+            steps {
+                script {
+                    // Remove all images associated with the project
+                    sh 'docker images -a | grep ai_cull_share_eventize | awk \'{print $3}\' | xargs --no-run-if-empty docker rmi'
+                }
+            }
+        }
         stage('Deploy with Docker Compose') {
             steps {
                 script {
                     withCredentials([file(credentialsId: 'Ai_Cull_Share_Eventize_Env_File', variable: 'SECRET_FILE')]) {
                         sh '''
-                            docker compose --env-file "$SECRET_FILE" up
+                            docker compose --env-file "$SECRET_FILE" up -d
                         '''
                     }
                 }
