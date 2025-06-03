@@ -104,7 +104,7 @@
 # # Use Supervisor to run both services
 # CMD ["/usr/bin/supervisord", "-c", "/etc/supervisord.conf"]
 
-FROM python:3.12
+FROM python:3.11
 
 # Set environment variables for Poetry & Python
 ENV PYTHONUNBUFFERED=1 \
