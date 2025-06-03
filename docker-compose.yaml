@@ -5,7 +5,7 @@ services:
     build: .
     container_name: backend
     env_file:
-      - .env
+      - "${SECRET_FILE}"
     environment:
       - TRANSFORMERS_CACHE=/app/.cache
     ports:
@@ -19,7 +19,7 @@ services:
     container_name: celery_worker
     command: celery -A src.main.main.celery worker --loglevel=info --pool=solo
     env_file:
-      - .env
+      - "${SECRET_FILE}"
     environment:
       - TRANSFORMERS_CACHE=/app/.cache
       - C_FORCE_ROOT=true
