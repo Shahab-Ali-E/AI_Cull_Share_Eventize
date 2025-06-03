@@ -16,7 +16,7 @@ pipeline {
                 script {
                     withCredentials([file(credentialsId: 'Ai_Cull_Share_Eventize_Env_File', variable: 'SECRET_FILE')]) {
                         sh '''
-                            docker compose --env-file "$SECRET_FILE" up -d
+                            docker compose --env-file "$SECRET_FILE" up
                         '''
                     }
                 }
