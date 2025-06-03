@@ -43,6 +43,7 @@ qrcode = {extras = ["pil"], version = "^8.0"}
 psycopg2-binary = "^2.9.10"
 opencv-python-headless = "^4.11.0.86"
 faiss-cpu = "^1.11.0"
+hnswlib = "^0.8.0"
 
 [build-system]
 requires = ["poetry-core"]

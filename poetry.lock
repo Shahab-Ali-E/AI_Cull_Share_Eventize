@@ -1285,6 +1285,20 @@ files = [
 tests = ["pytest"]
 
 [[package]]
+name = "hnswlib"
+version = "0.8.0"
+description = "hnswlib"
+optional = false
+python-versions = "*"
+groups = ["main"]
+files = [
+    {file = "hnswlib-0.8.0.tar.gz", hash = "sha256:cb6d037eedebb34a7134e7dc78966441dfd04c9cf5ee93911be911ced951c44c"},
+]
+
+[package.dependencies]
+numpy = "*"
+
+[[package]]
 name = "hpack"
 version = "4.1.0"
 description = "Pure-Python HPACK header encoding"
@@ -4853,4 +4867,4 @@ files = [
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.12,<3.13"
-content-hash = "781165385bfa02d4b2936e14385cd8cf25960aa2aded23808055b6d6da7bafc6"
+content-hash = "d3fbac2d965e61ab57939c237ec3b25ae9edf4b9abc9efb252d974a1f7748e13"

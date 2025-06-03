@@ -539,7 +539,7 @@ async def share_images(event_data: ImageTaskData, db_session: DBSessionDep, user
 
 
         try:
-            share_image_task = download_and_process_images.apply_async(args=[user_id, user.get('username'), event_id, folder_data.name, event_folder_path, urls, f"{folder_data.name}.faiss", f"{folder_data.name}.pkl", [user.get('email')]])
+            share_image_task = download_and_process_images.apply_async(args=[user_id, user.get('username'), event_id, folder_data.name, event_folder_path, urls, f"{folder_data.name}.bin", f"{folder_data.name}.pkl", [user.get('email')]])
         except Exception as e:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Error sending task to Celery: {str(e)}")
 
@@ -608,11 +608,11 @@ async def get_images(event_id: UUID, db_session: DBSessionDep, image: UploadFile
 
     try:
         event_folder_path = os.path.join("src", "services", "SmartShare", "Smart_Share_Events_Data", f"{folder_data.id}")
-        faiss_index_path = os.path.join(event_folder_path, f'{folder_data.name}.faiss')
+        hnswlib_index_path = os.path.join(event_folder_path, f'{folder_data.name}.bin')
         image_map_path = os.path.join(event_folder_path, f'{folder_data.name}.pkl')
 
         # Perform face search
-        matches_arr = await get_similar_images(query_image=image, image_map_picklefilepath=image_map_path, index_fias_filepath=faiss_index_path, threshold=0.82)
+        matches_arr = await get_similar_images(query_image=image, image_map_picklefilepath=image_map_path, index_hnsw_filepath=hnswlib_index_path, threshold=0.90)
         
         found_images = []
         
