@@ -155,4 +155,4 @@ COPY . .
 # Expose app port
 EXPOSE 8000
 
-CMD ["uvicorn", "src.main.main:app", "--host","0.0.0.0", "--port", "8000"]
+CMD ["gunicorn", "src.main.main:app", "-k", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:8000", "--workers", "2"]
