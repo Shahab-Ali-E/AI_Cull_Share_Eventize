@@ -13,6 +13,7 @@ services:
     volumes:
       - ./static:/app/static
       - huggingface_cache:/app/.cache/huggingface
+      - ./src/services/SmartShare/Smart_Share_Events_Data:/app/src/services/SmartShare/Smart_Share_Events_Data # Bind mount event data
 
   celery_dev:
     build: .
@@ -26,6 +27,8 @@ services:
     volumes:
       - ./static:/app/static
       - huggingface_cache:/app/.cache/huggingface
+      - ./src/services/SmartShare/Smart_Share_Events_Data:/app/src/services/SmartShare/Smart_Share_Events_Data # Bind mount event data
+    
     depends_on:
       - backend
 
