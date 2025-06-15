@@ -352,7 +352,7 @@ async def get_public_event(
 
 
 @router.post('/create_event/{event_name}', status_code=status.HTTP_201_CREATED)
-async def create_event(event_name:str, request:Request, db_session:DBSessionDep, user: User = Depends(get_user), event_cover_image: UploadFile = File(None)):
+async def create_event(event_name:str, db_session:DBSessionDep, user: User = Depends(get_user), event_cover_image: UploadFile = File(None)):
     """
     🎉 **Create a New Event** 🎉
 
@@ -393,11 +393,23 @@ async def create_event(event_name:str, request:Request, db_session:DBSessionDep,
 
             
             await db_session.commit()
-            # Define the path where you want to create the folder
-            path_where_to_create_folder =  os.path.join("src","services","SmartShare","Smart_Share_Events_Data" )
-            # Create the complete folder path
-            folder = os.path.join(path_where_to_create_folder,str(db_response.get('data').id))
-            os.mkdir(folder)
+            # Step 1: Define base path
+            base_path = os.path.join("src", "services", "SmartShare")
+
+            # Step 2: Define main folder path
+            main_folder = os.path.join(base_path, "Smart_Share_Events_Data")
+
+            # Step 3: Create 'Smart_Share_Events_Data' folder if it doesn't exist
+            if not os.path.exists(main_folder):
+                os.makedirs(main_folder)
+
+            # Step 4: Create subfolder with event ID
+            event_id = str(db_response.get('data').id)
+            folder = os.path.join(main_folder, event_id)
+
+            # Step 5: Create subfolder if it doesn't exist
+            if not os.path.exists(folder):
+                os.makedirs(folder)
             
             return {
                 'database_response': db_response
