@@ -1,10 +1,12 @@
 from fastapi import HTTPException, status, UploadFile, File
 import os
 import uuid
+from src.config.settings import get_settings
 from src.model.SmartShareFolders import SmartShareFolder
 from src.utils.UpsertMetaDataToDB import upsert_folder_metadata_DB
 from sqlalchemy.ext.asyncio import AsyncSession
 
+settings = get_settings()
 
 async def update_event_details(db_session:AsyncSession, event_id: str, user_id: str, cover_image:UploadFile = File(None), description:str=None):
     update_fields = {}
@@ -43,7 +45,7 @@ async def update_event_details(db_session:AsyncSession, event_id: str, user_id: 
             file.write(await cover_image.read())
 
         # Simulate a publicly accessible URL
-        cover_image_url = f"https://api.aicullshareeventizebackend.online/{local_folder}/{unique_filename}"
+        cover_image_url = f"{settings.APP_HOSTED_URL}/{local_folder}/{unique_filename}"
         
         # Add cover_image_url to update_fields
         update_fields["cover_image"] = cover_image_url

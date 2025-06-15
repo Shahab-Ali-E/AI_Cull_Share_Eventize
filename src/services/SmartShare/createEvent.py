@@ -51,7 +51,7 @@ async def create_event_in_S3_and_DB(event_name:str, user_id:str, s3_utils_obj, d
                 file.write(await event_cover_image.read())
 
             # Simulate a publicly accessible URL
-            cover_image_url = f"https://api.aicullshareeventizebackend.online/{local_folder}/{unique_filename}"
+            cover_image_url = f"{settings.APP_HOSTED_URL}/{local_folder}/{unique_filename}"
                 
         #save created folder meta data in DB
         path_in_s3 = f'{settings.AWS_BUCKET_SMART_SHARE_NAME}/{user_id}/{event_name}'
