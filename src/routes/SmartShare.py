@@ -603,6 +603,8 @@ async def get_images(event_id: UUID, db_session: DBSessionDep, image: UploadFile
         )
     )
 
+    print('\n\n\n ########## image ##########')
+    print('\n\n\n', image)
     if not folder_data:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f'Event with id {event_id} not found!')
 

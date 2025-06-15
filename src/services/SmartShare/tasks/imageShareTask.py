@@ -205,10 +205,28 @@ def download_and_process_images(self, user_id, user_name:str, event_id, event_na
     # Save HNSW index and image map
     hnsw_index_path = os.path.join(event_folder_path, index_hnswlib_filename)
     image_map_path = os.path.join(event_folder_path, image_map_pickle_filename)
+    
+    print(f"Saving index to {hnsw_index_path}")
+    print(f"Saving map to {image_map_path}")
 
-    index.save_index(hnsw_index_path)
-    with open(image_map_path, "wb") as f:
-        pickle.dump(image_map, f)
+    try:
+        index.save_index(hnsw_index_path)
+        print("Index saved successfully.")
+    except Exception as e:
+        print(f"Error saving index file: {e}")
+        raise
+    
+    try:
+        with open(image_map_path, "wb") as f:
+            pickle.dump(image_map, f)
+        print("Image map saved successfully.")
+    except Exception as e:
+        print(f"Error saving pickle file: {e}")
+        raise
+    
+    print("Post-save files:", os.listdir(event_folder_path))
+    
+    print('\n\n\ ## path to save image',path_to_save_images)
 
     # Clean up
     shutil.rmtree(path_to_save_images, ignore_errors=True)
